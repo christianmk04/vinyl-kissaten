@@ -6,6 +6,9 @@ import { applyPS1Material, makeWoodTexture } from '@/lib/shaders/ps1'
 import AlbumSpine from './AlbumSpine'
 import type { SpotifyAlbum } from '@/lib/types'
 
+const FACE_SPACING = 0.55  // face-out spacing per album (50cm cover + 5cm gap)
+const MAX_ALBUMS_PER_SHELF = 11
+
 interface ShelfProps {
   albums: SpotifyAlbum[]
   position: [number, number, number]
@@ -13,10 +16,7 @@ interface ShelfProps {
   onSelectAlbum: (album: SpotifyAlbum) => void
 }
 
-const SPINE_WIDTH = 0.034 // slightly more than geometry width for spacing
-const MAX_ALBUMS_PER_SHELF = 20
-
-export default function Shelf({ albums, position, label, onSelectAlbum }: ShelfProps) {
+export default function Shelf({ albums, position, onSelectAlbum }: ShelfProps) {
   const woodTex = useMemo(() => makeWoodTexture(), [])
   const shelfMat = useMemo(() => {
     const m = new THREE.MeshLambertMaterial({ map: woodTex, flatShading: true })
@@ -26,37 +26,38 @@ export default function Shelf({ albums, position, label, onSelectAlbum }: ShelfP
   }, [woodTex])
 
   const displayed = albums.slice(0, MAX_ALBUMS_PER_SHELF)
-  const totalWidth = displayed.length * SPINE_WIDTH
-  const startX = -totalWidth / 2 + SPINE_WIDTH / 2
+  const totalWidth = displayed.length * FACE_SPACING
+  const startX = -totalWidth / 2 + FACE_SPACING / 2
 
   return (
     <group position={position}>
       {/* Shelf plank */}
-      <mesh position={[0, 0, 0]} material={shelfMat}>
-        <boxGeometry args={[4, 0.04, 0.32]} />
+      <mesh material={shelfMat}>
+        <boxGeometry args={[6.4, 0.04, 0.42]} />
       </mesh>
 
-      {/* Back lip to stop albums falling */}
-      <mesh position={[0, 0.14, -0.14]} material={shelfMat}>
-        <boxGeometry args={[4, 0.28, 0.02]} />
+      {/* Shadow strip under the rail — gives each shelf a sense of depth
+          rather than floating against the back panel */}
+      <mesh position={[0, -0.025, 0.05]}>
+        <boxGeometry args={[6.4, 0.012, 0.32]} />
+        <meshBasicMaterial color="#0a0604" transparent opacity={0.85} />
       </mesh>
 
-      {/* Albums standing on shelf */}
+      {/* Back panel */}
+      <mesh position={[0, 0.27, -0.20]} material={shelfMat}>
+        <boxGeometry args={[6.4, 0.54, 0.02]} />
+      </mesh>
+
+      {/* Albums face-out, standing on shelf plank */}
       {displayed.map((album, i) => (
         <AlbumSpine
           key={album.id}
           album={album}
-          position={[startX + i * SPINE_WIDTH, 0.16, 0]}
+          position={[startX + i * FACE_SPACING, 0.29, 0.02]}
           index={i}
           onSelect={onSelectAlbum}
         />
       ))}
-
-      {/* Shelf label card */}
-      <mesh position={[-1.85, 0.1, 0.17]}>
-        <boxGeometry args={[0.25, 0.1, 0.005]} />
-        <meshLambertMaterial color="#e8d5a8" flatShading />
-      </mesh>
     </group>
   )
 }

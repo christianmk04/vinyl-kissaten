@@ -6,7 +6,12 @@ export interface SpotifyTrack {
   disc_number: number
   track_number: number
   artists: Array<{ id: string; name: string }>
+  // 30-second mp3 preview — null for tracks without a preview clip.
+  // Used by preview-mode playback for full Web Audio FX chain access.
+  preview_url: string | null
 }
+
+export type PlaybackMode = 'spotify' | 'preview'
 
 export interface SpotifyAlbum {
   id: string
@@ -25,7 +30,7 @@ export interface SpotifyAlbum {
 export type GameView = 'first-person' | 'shelf-detail' | 'turntable-top-down'
 export type RecordSide = 'A' | 'B'
 export type TonearmState = 'rest' | 'cued' | 'playing'
-export type PlatterRpm = 33 | 45
+export type PlatterRpm = 33 | 45 | 78
 
 // Spotify Web Playback SDK types (partial)
 declare global {

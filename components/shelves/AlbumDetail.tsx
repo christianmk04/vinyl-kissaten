@@ -7,11 +7,11 @@ import { useGameStore } from '@/lib/game/store'
 import { makeAlbumPlaceholderTexture, ps1Texture } from '@/lib/shaders/ps1'
 import type { SpotifyAlbum } from '@/lib/types'
 
-const PAGE_SIZE = 12
-const GRID_COLS = 4
+const PAGE_SIZE = 9
+const GRID_COLS = 3
 const GRID_ROWS = 3
-const CARD_SIZE = 0.35
-const CARD_GAP = 0.04
+const CARD_SIZE = 0.5
+const CARD_GAP = 0.06
 
 export default function AlbumDetail() {
   const { camera } = useThree()
@@ -99,25 +99,11 @@ function AlbumCard({
       ref={meshRef}
       position={position}
       onClick={onSelect}
-      onPointerEnter={() => {
-        hoverRef.current = true
-        if (meshRef.current) {
-          ;(meshRef.current.material as THREE.MeshLambertMaterial).emissive?.set(
-            '#332200',
-          )
-        }
-      }}
-      onPointerLeave={() => {
-        hoverRef.current = false
-        if (meshRef.current) {
-          ;(meshRef.current.material as THREE.MeshLambertMaterial).emissive?.set(
-            '#000000',
-          )
-        }
-      }}
+      onPointerEnter={() => { hoverRef.current = true }}
+      onPointerLeave={() => { hoverRef.current = false }}
     >
       <boxGeometry args={[CARD_SIZE, CARD_SIZE, 0.015]} />
-      <meshLambertMaterial map={tex} flatShading />
+      <meshBasicMaterial map={tex} />
     </mesh>
   )
 }

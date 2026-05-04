@@ -3,29 +3,33 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { useGameStore } from '@/lib/game/store'
 import { getWindowColor, getAmbientIntensity, CYCLE_INCREMENT_60FPS } from '@/lib/game/dayNight'
 
 const LAMP_COLOR = '#ffb56b'
+const TABLE_LAMP_COLOR = '#ffa050'
 const LAMP_POSITIONS: [number, number, number][] = [
   [-1.5, 2.7, -3],
   [1.5, 2.7, -1],
   [-1.5, 2.7, 1.5],
   [2.5, 2.7, 3],
 ]
+// One small lamp per cafe table — positions match BarCounter.tsx CafeTable instances
+const TABLE_LAMP_POSITIONS: [number, number, number][] = [
+  [-2.5, 0.85, -0.8],
+  [-1.8, 0.85, 1.8],
+  [0.5, 0.85, 2.2],
+]
 
 export default function Lighting() {
   const ambientRef = useRef<THREE.AmbientLight>(null)
   const windowMatsRef = useRef<THREE.MeshLambertMaterial[]>([])
-  const { timeOfDay, cycleSpeed, setTimeOfDay } = useGameStore()
+  const timeRef = useRef(0.65)
 
-  useFrame((_, delta) => {
-    const store = useGameStore.getState()
-    const newTime = (store.timeOfDay + CYCLE_INCREMENT_60FPS * store.cycleSpeed) % 1
-    setTimeOfDay(newTime)
+  useFrame(() => {
+    timeRef.current = (timeRef.current + CYCLE_INCREMENT_60FPS) % 1
 
-    const wColor = getWindowColor(newTime)
-    const ambIntensity = getAmbientIntensity(newTime)
+    const wColor = getWindowColor(timeRef.current)
+    const ambIntensity = getAmbientIntensity(timeRef.current)
 
     if (ambientRef.current) {
       ambientRef.current.intensity = ambIntensity
@@ -37,7 +41,9 @@ export default function Lighting() {
 
   return (
     <>
-      <ambientLight ref={ambientRef} color="#ffb080" intensity={0.06} />
+      {/* Dim base lighting — the room reads as pools of warm light, not flat */}
+      <hemisphereLight args={['#ffb080', '#1a0800', 0.6]} />
+      <ambientLight ref={ambientRef} color="#ffb080" intensity={2.5} />
 
       {/* Pendant point lights */}
       {LAMP_POSITIONS.map((pos, i) => (
@@ -69,38 +75,56 @@ export default function Lighting() {
               depthWrite={false}
             />
           </mesh>
-          {/* Shadow blob on floor */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -pos[1] + 0.01, 0]}>
-            <planeGeometry args={[1.5, 1.5]} />
-            <meshBasicMaterial
-              color="#000000"
-              transparent
-              opacity={0.35}
-              blending={THREE.MultiplyBlending}
-              depthWrite={false}
-            />
-          </mesh>
           <pointLight
             color={LAMP_COLOR}
-            intensity={1.2}
-            distance={4}
+            intensity={60}
+            distance={6}
             decay={2}
           />
         </group>
       ))}
 
-      {/* Single shadow-casting spot over the turntable */}
+      {/* Tighter shadow-casting spot over the turntable — focused beam, not flood */}
       <spotLight
-        position={[2.5, 2.8, 0]}
-        target-position={[2.5, 0.8, 0]}
+        position={[2.5, 2.6, 0]}
+        target-position={[3.0, 0.9, 0]}
         color={LAMP_COLOR}
-        intensity={1.5}
-        angle={0.5}
-        penumbra={0.3}
-        distance={4}
+        intensity={28}
+        angle={0.28}
+        penumbra={0.45}
+        distance={3.5}
         castShadow
         shadow-mapSize={[256, 256]}
       />
+
+      {/* Per-table accent lamps — each cafe table has its own pool of warm light */}
+      {TABLE_LAMP_POSITIONS.map((pos, i) => (
+        <group key={`tlamp-${i}`} position={pos}>
+          {/* Small lamp body sitting on the table */}
+          <mesh position={[0, 0.04, 0]}>
+            <cylinderGeometry args={[0.045, 0.06, 0.08, 6]} />
+            <meshLambertMaterial color="#3a1810" flatShading />
+          </mesh>
+          {/* Glowing shade */}
+          <mesh position={[0, 0.13, 0]}>
+            <cylinderGeometry args={[0.07, 0.05, 0.1, 6]} />
+            <meshBasicMaterial color="#ffd090" />
+          </mesh>
+          {/* Tiny glowing flame pixel at the wick — visible through the shade top */}
+          <mesh position={[0, 0.19, 0]}>
+            <planeGeometry args={[0.018, 0.028]} />
+            <meshBasicMaterial color="#ffe080" transparent opacity={0.95} />
+          </mesh>
+          {/* The actual light */}
+          <pointLight
+            color={TABLE_LAMP_COLOR}
+            intensity={2.5}
+            distance={1.6}
+            decay={2}
+            position={[0, 0.1, 0]}
+          />
+        </group>
+      ))}
     </>
   )
 }

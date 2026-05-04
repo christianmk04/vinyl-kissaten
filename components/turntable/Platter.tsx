@@ -13,6 +13,8 @@ export default function Platter() {
 
   const isPlaying = useGameStore((s) => s.isPlaying)
   const platterRpm = useGameStore((s) => s.platterRpm)
+  const pitch = useGameStore((s) => s.pitch)
+  const wowFlutter = useGameStore((s) => s.wowFlutter)
   const loadedAlbum = useGameStore((s) => s.loadedAlbum)
   const loadedSide = useGameStore((s) => s.loadedSide)
 
@@ -36,10 +38,14 @@ export default function Platter() {
     return m
   }, [])
 
-  useFrame((_, delta) => {
+  useFrame(({ clock }, delta) => {
     if (isPlaying) {
-      // 33 RPM ≈ 0.55 rev/s, 45 RPM ≈ 0.75 rev/s
-      const rps = platterRpm === 33 ? 0.55 : 0.75
+      // RPM to rev/s: 33→0.55, 45→0.75, 78→1.30
+      const baseRps = platterRpm === 33 ? 0.55 : platterRpm === 45 ? 0.75 : 1.30
+      // pitch is -1..+1, 0=normal; multiply baseRps by pitch speed factor
+      const pitchMult = 1.0 + pitch * 0.5
+      const flutter = 1.0 + Math.sin(clock.getElapsedTime() * 0.8) * wowFlutter * 0.04
+      const rps = baseRps * pitchMult * flutter
       spinRef.current += rps * Math.PI * 2 * delta
       if (platterRef.current) platterRef.current.rotation.y = spinRef.current
       if (vinylRef.current) vinylRef.current.rotation.y = spinRef.current

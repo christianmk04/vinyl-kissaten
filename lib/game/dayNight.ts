@@ -44,10 +44,10 @@ export function getWindowColor(t: number): THREE.Color {
 
 // Returns ambient intensity modifier for time of day (dim at night, brighter at noon)
 export function getAmbientIntensity(t: number): number {
-  if (t < 0.3) return 0.04
-  if (t < 0.5) return 0.04 + (t - 0.3) * 0.2
-  if (t < 0.8) return 0.08
-  return 0.08 - (t - 0.8) * 0.4
+  if (t < 0.3) return 4          // night: dim but visible
+  if (t < 0.5) return 4 + (t - 0.3) * 30  // dawn ramp
+  if (t < 0.8) return 10         // afternoon: warm and bright
+  return 10 - (t - 0.8) * 30    // dusk ramp (floor at 1 near midnight)
 }
 
 // Simple time-of-day label for the now-playing card

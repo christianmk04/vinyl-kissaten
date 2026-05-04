@@ -2,18 +2,18 @@
 
 import { useEffect, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
-import { PointerLockControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { useGameStore } from '@/lib/game/store'
 import { usePlayerMovement } from '@/lib/game/usePlayerMovement'
 import { interactions } from '@/lib/game/interactions'
-// PointerLockControls from drei is a React component, access its instance type via useRef
-// The actual instance is THREE.PointerLockControls from the three-stdlib it wraps
+import { getPlayer } from '@/lib/spotify/player'
+import * as preview from '@/lib/audio/previewPlayer'
+
+const LOOK_SENSITIVITY = 0.005
 
 export default function DesktopControls() {
-  const { camera, raycaster, scene } = useThree()
+  const { camera, raycaster, scene, gl } = useThree()
   const view = useGameStore((s) => s.view)
-  const plcRef = useRef<any>(null) // drei PointerLockControls ref
 
   const keys = useRef({
     w: false, s: false, a: false, d: false,
@@ -21,32 +21,96 @@ export default function DesktopControls() {
     Shift: false,
   })
 
+  const lookRef = useRef({ yaw: 0, pitch: -0.12 })
+  const isDragging = useRef(false)
+
+  // ── Drag-to-look ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const canvas = gl.domElement
+    camera.rotation.order = 'YXZ'
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (useGameStore.getState().view !== 'first-person') return
+      // Ignore right-click (reserved for record flip)
+      if (e.button === 2) return
+      isDragging.current = true
+      canvas.setPointerCapture(e.pointerId)
+      canvas.style.cursor = 'grabbing'
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDragging.current) return
+      if (useGameStore.getState().view !== 'first-person') return
+      lookRef.current.yaw -= e.movementX * LOOK_SENSITIVITY
+      lookRef.current.pitch = Math.max(
+        -Math.PI / 2.5,
+        Math.min(Math.PI / 2.5, lookRef.current.pitch - e.movementY * LOOK_SENSITIVITY),
+      )
+      camera.rotation.y = lookRef.current.yaw
+      camera.rotation.x = lookRef.current.pitch
+    }
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (!isDragging.current) return
+      isDragging.current = false
+      try { canvas.releasePointerCapture(e.pointerId) } catch (_) { /* noop */ }
+      canvas.style.cursor = useGameStore.getState().view === 'turntable-top-down' ? 'default' : 'grab'
+    }
+
+    canvas.style.cursor = view === 'turntable-top-down' ? 'default' : 'grab'
+
+    canvas.addEventListener('pointerdown', onPointerDown)
+    canvas.addEventListener('pointermove', onPointerMove)
+    canvas.addEventListener('pointerup', onPointerUp)
+    canvas.addEventListener('pointercancel', onPointerUp)
+    return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      canvas.removeEventListener('pointermove', onPointerMove)
+      canvas.removeEventListener('pointerup', onPointerUp)
+      canvas.removeEventListener('pointercancel', onPointerUp)
+    }
+  }, [camera, gl, view])
+
+  // ── Keyboard ────────────────────────────────────────────────────────────────
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.key in keys.current) {
-        (keys.current as Record<string, boolean>)[e.key] = true
+      const k = keys.current as Record<string, boolean>
+      if (e.key in k) k[e.key] = true
+
+      if (e.key === 'Enter' || e.key === 'e' || e.key === 'E') fireInteraction()
+      if (e.key === 'f' || e.key === 'F') useGameStore.getState().flipHeldRecord()
+      if (e.key === 'Tab') { e.preventDefault(); useGameStore.getState().toggleNowPlaying() }
+      if (e.key === 'Escape') {
+        const s = useGameStore.getState()
+        if (s.view === 'turntable-top-down') {
+          s.setView('first-person')
+        } else if (s.heldAlbum) {
+          s.setHeldAlbum(null)
+        }
       }
-      // E to interact
-      if (e.key === 'e' || e.key === 'E') fireInteraction()
-      // F to flip held record
-      if (e.key === 'f' || e.key === 'F') {
-        useGameStore.getState().flipHeldRecord()
+      // Track navigation — branches on playback mode
+      if (e.key === ']') {
+        if (useGameStore.getState().playbackMode === 'preview') {
+          preview.nextTrack()
+        } else {
+          const p = getPlayer()
+          if (p) p.nextTrack().catch(() => null)
+        }
       }
-      // Tab to toggle now-playing
-      if (e.key === 'Tab') {
-        e.preventDefault()
-        useGameStore.getState().toggleNowPlaying()
-      }
-      // Esc exits turntable view
-      if (e.key === 'Escape' && view === 'turntable-top-down') {
-        useGameStore.getState().setView('first-person')
+      if (e.key === '[') {
+        if (useGameStore.getState().playbackMode === 'preview') {
+          preview.previousTrack()
+        } else {
+          const p = getPlayer()
+          if (p) p.previousTrack().catch(() => null)
+        }
       }
     }
     const up = (e: KeyboardEvent) => {
-      if (e.key in keys.current) {
-        (keys.current as Record<string, boolean>)[e.key] = false
-      }
+      const k = keys.current as Record<string, boolean>
+      if (e.key in k) k[e.key] = false
     }
+
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     return () => {
@@ -55,46 +119,28 @@ export default function DesktopControls() {
     }
   }, [view])
 
+  // ── Right-click flip ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const onContext = (e: MouseEvent) => {
+      e.preventDefault()
+      useGameStore.getState().flipHeldRecord()
+    }
+    window.addEventListener('contextmenu', onContext)
+    return () => window.removeEventListener('contextmenu', onContext)
+  }, [])
+
   function fireInteraction() {
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
     const hits = raycaster.intersectObjects(scene.children, true)
     for (const hit of hits) {
-      if (hit.distance > 2.5) break
-      const uuid = hit.object.uuid
-      if (interactions.has(uuid)) {
-        interactions.fire(uuid)
-        break
-      }
-      // Walk up parent chain
-      let obj: THREE.Object3D | null = hit.object.parent
+      if (hit.distance > 3.5) break
+      let obj: THREE.Object3D | null = hit.object
       while (obj) {
-        if (interactions.has(obj.uuid)) {
-          interactions.fire(obj.uuid)
-          return
-        }
+        if (interactions.has(obj.uuid)) { interactions.fire(obj.uuid); return }
         obj = obj.parent
       }
     }
   }
-
-  // Left-click also fires interaction
-  useEffect(() => {
-    const click = (e: MouseEvent) => {
-      if (e.button === 0 && plcRef.current?.isLocked) {
-        fireInteraction()
-      }
-      // Right-click flips held record
-      if (e.button === 2) {
-        useGameStore.getState().flipHeldRecord()
-      }
-    }
-    window.addEventListener('click', click)
-    window.addEventListener('contextmenu', (e) => {
-      e.preventDefault()
-      useGameStore.getState().flipHeldRecord()
-    })
-    return () => window.removeEventListener('click', click)
-  }, [])
 
   usePlayerMovement(() => {
     const k = keys.current
@@ -105,10 +151,5 @@ export default function DesktopControls() {
     }
   })
 
-  return (
-    <PointerLockControls
-      ref={plcRef}
-      makeDefault
-    />
-  )
+  return null
 }

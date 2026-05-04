@@ -74,18 +74,45 @@ export function categorizeAlbums(
   return categories
 }
 
-// Downsamples album art to 128×128 using canvas nearest-neighbor scaling.
-// Returns a data URL or the original URL on failure.
+// Downsamples album art to 512×512 and pre-processes it to look right under the
+// kissaten's warm lighting: lower saturation + slight darkening so colors don't
+// blow out when the lambert lights add their tint on top.
 export async function downsampleArtwork(imageUrl: string): Promise<string> {
   if (typeof window === 'undefined') return imageUrl
   try {
     const img = await loadImage(imageUrl)
     const canvas = document.createElement('canvas')
-    canvas.width = 128
-    canvas.height = 128
+    canvas.width = 512
+    canvas.height = 512
     const ctx = canvas.getContext('2d')!
     ctx.imageSmoothingEnabled = false
-    ctx.drawImage(img, 0, 0, 128, 128)
+    ctx.drawImage(img, 0, 0, 512, 512)
+
+    // Album art is rendered with MeshBasicMaterial (no lighting), so the
+    // texture is exactly what shows on screen. Pull saturation way down and
+    // soften contrast around the midpoint so the covers read as muted/vintage
+    // rather than glowing under the cafe pendants.
+    const SATURATION = 0.35   // 0=grayscale, 1=untouched
+    const CONTRAST = 0.72     // <1 = pull values toward 128 grey
+    const data = ctx.getImageData(0, 0, 512, 512)
+    const px = data.data
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], g = px[i + 1], b = px[i + 2]
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b
+      // Desaturate
+      let r1 = lum + (r - lum) * SATURATION
+      let g1 = lum + (g - lum) * SATURATION
+      let b1 = lum + (b - lum) * SATURATION
+      // Reduce contrast (pull toward middle grey)
+      r1 = 128 + (r1 - 128) * CONTRAST
+      g1 = 128 + (g1 - 128) * CONTRAST
+      b1 = 128 + (b1 - 128) * CONTRAST
+      px[i]     = Math.max(0, Math.min(255, Math.round(r1)))
+      px[i + 1] = Math.max(0, Math.min(255, Math.round(g1)))
+      px[i + 2] = Math.max(0, Math.min(255, Math.round(b1)))
+    }
+    ctx.putImageData(data, 0, 0)
+
     return canvas.toDataURL('image/png')
   } catch {
     return imageUrl

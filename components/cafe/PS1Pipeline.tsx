@@ -14,16 +14,15 @@ interface PS1PipelineProps {
   flicker?: boolean
 }
 
-// Internal resolution — the whole PS1 look lives here
-const RENDER_W = 320
-const RENDER_H = 240
+const RENDER_W = 512
+const RENDER_H = 384
 
 export default function PS1Pipeline({
   scanlines = false,
   barrel = false,
   flicker = false,
 }: PS1PipelineProps) {
-  const { gl, scene, camera, size } = useThree()
+  const { gl, scene, camera } = useThree()
 
   const renderTargetRef = useRef<THREE.WebGLRenderTarget | null>(null)
   const quadSceneRef = useRef<THREE.Scene | null>(null)
@@ -32,7 +31,6 @@ export default function PS1Pipeline({
   const uniformsRef = useRef<Record<string, THREE.IUniform> | null>(null)
 
   useEffect(() => {
-    // Low-res render target — 320×240, nearest filter = chunky pixels
     const rt = new THREE.WebGLRenderTarget(RENDER_W, RENDER_H, {
       magFilter: THREE.NearestFilter,
       minFilter: THREE.NearestFilter,
@@ -40,14 +38,13 @@ export default function PS1Pipeline({
     })
     renderTargetRef.current = rt
 
-    // Fullscreen quad scene for the post-process pass
     const qScene = new THREE.Scene()
     const qCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
     const uniforms: Record<string, THREE.IUniform> = {
       tDiffuse: { value: rt.texture },
       uResolution: { value: new THREE.Vector2(RENDER_W, RENDER_H) },
-      uColorDepth: { value: 32.0 }, // 5-bit per channel
+      uColorDepth: { value: 64.0 },
       uScanlines: { value: scanlines },
       uBarrel: { value: barrel },
       uTime: { value: 0 },
@@ -78,7 +75,6 @@ export default function PS1Pipeline({
     }
   }, [])
 
-  // Sync toggles
   useEffect(() => {
     if (!uniformsRef.current) return
     uniformsRef.current.uScanlines.value = scanlines
@@ -95,14 +91,12 @@ export default function PS1Pipeline({
     uniforms.uTime.value = clock.getElapsedTime()
     uniforms.uFlicker.value = flicker ? 0.005 : 0
 
-    // 1. Render world scene to low-res target
     gl.setRenderTarget(rt)
     gl.render(scene, camera)
 
-    // 2. Post-process: dither + upscale to screen
     gl.setRenderTarget(null)
     gl.render(qScene, qCamera)
-  }, 1) // priority 1 = runs after default render priority 0
+  }, 1)
 
   return null
 }

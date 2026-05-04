@@ -19,7 +19,7 @@ export default function InteractionRaycaster({ onHover }: InteractionRaycasterPr
 
     let found: string | null = null
     for (const hit of hits) {
-      if (hit.distance > 2.5) break
+      if (hit.distance > 3.5) break
       let obj: THREE.Object3D | null = hit.object
       while (obj) {
         if (interactions.has(obj.uuid)) {

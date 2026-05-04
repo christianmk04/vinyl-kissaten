@@ -112,8 +112,8 @@ export default function TurntableTable() {
         <pointLight
           position={[0, 0.12, 0]}
           color="#ffbb44"
-          intensity={0.6}
-          distance={1.5}
+          intensity={25}
+          distance={2}
           decay={2}
         />
       </group>

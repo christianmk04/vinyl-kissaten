@@ -108,7 +108,7 @@ export default function SpotifyAuthGate() {
           style={{
             fontSize: '12px',
             color: '#a08870',
-            marginBottom: '2rem',
+            marginBottom: '1.25rem',
             lineHeight: 1.6,
           }}
         >
@@ -116,8 +116,33 @@ export default function SpotifyAuthGate() {
           <br />
           <br />
           <span style={{ color: '#6a5848', fontSize: '10px' }}>
-            Spotify Premium required for playback.
+            Spotify Premium required for full-track playback.
+            <br />
+            (30-second previews work on free accounts.)
           </span>
+        </div>
+
+        {/* Invite-only beta notice — Spotify apps start in Development Mode
+            with a 25-user allowlist until "Extended Quota" is approved. This
+            warns visitors so they don't think the app is broken when Spotify
+            shows them an "app not approved" error after authorizing. */}
+        <div
+          style={{
+            fontSize: '10px',
+            color: '#8a6a40',
+            background: '#1a0f06',
+            border: '1px solid #3a2410',
+            borderLeft: '3px solid #cc8833',
+            padding: '8px 12px',
+            marginBottom: '1.5rem',
+            lineHeight: 1.5,
+            textAlign: 'left',
+          }}
+        >
+          <strong style={{ color: '#cc8833' }}>Invite-only beta.</strong>{' '}
+          This kissaten is currently open to a small group of testers. If you
+          see an &quot;app not approved&quot; page after signing in, message
+          the host with your Spotify email to be added to the allowlist.
         </div>
 
         {error && (

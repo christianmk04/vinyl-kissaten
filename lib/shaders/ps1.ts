@@ -1,11 +1,7 @@
 import * as THREE from 'three'
 
 // ─── Vertex snapping ─────────────────────────────────────────────────────────
-// Snaps clip-space xy to a coarse integer grid, producing the iconic PS1 vertex
-// wobble / shimmer as the camera moves. Lower snapStrength = more wobble.
-
 export const vertexSnapChunk = /* glsl */ `
-  // PS1 vertex snapping — inject after #include <project_vertex>
   #ifdef USE_PS1_SNAP
     vec4 snappedPos = gl_Position;
     snappedPos.xyz /= snappedPos.w;
@@ -16,12 +12,6 @@ export const vertexSnapChunk = /* glsl */ `
 `
 
 // ─── Affine UV mapping ────────────────────────────────────────────────────────
-// WebGL 2 always does perspective-correct UV interpolation. To fake affine
-// (PS1-style, no perspective correction), we pass uv*w as a vec3 varying so
-// GL's own perspective correction reconstructs screen-space linear interp.
-// Vertex: vAffineUV = vec3(uv * gl_Position.w, gl_Position.w)
-// Fragment: vec2 uv = vAffineUV.xy / vAffineUV.z
-
 export const affineUVVertexChunk = /* glsl */ `
   #ifdef USE_AFFINE_UV
     vAffineUV = vec3(vMapUv * gl_Position.w, gl_Position.w);
@@ -35,12 +25,6 @@ export const affineUVFragmentChunk = /* glsl */ `
 `
 
 // ─── Post-process: dither + quantize ─────────────────────────────────────────
-// Renders a fullscreen quad over the low-res render target.
-// 1. Color quantize to ~5-bit per channel (32 levels)
-// 2. 4×4 Bayer ordered dithering applied before quantize
-// 3. Optional scanline darkening
-// 4. Optional barrel distortion for CRT feel
-
 export const ditherVertexShader = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -60,7 +44,6 @@ export const ditherFragmentShader = /* glsl */ `
 
   varying vec2 vUv;
 
-  // 4x4 Bayer threshold matrix (normalized 0..1)
   float bayer4x4(vec2 coord) {
     int x = int(mod(coord.x, 4.0));
     int y = int(mod(coord.y, 4.0));
@@ -102,37 +85,30 @@ export const ditherFragmentShader = /* glsl */ `
     }
 
     vec4 color = texture2D(tDiffuse, uv);
-
-    // Screen-space pixel coord for dither
     vec2 screenCoord = uv * uResolution;
 
-    // Dither offset: scale color (0..1) up to color-depth levels, add threshold,
-    // then quantize. This shifts the quantization boundary by the dither matrix.
-    float levels = uColorDepth; // e.g. 32.0 for 5-bit
-    float threshold = bayer4x4(screenCoord) - 0.5; // -0.5 .. +0.5
+    float levels = uColorDepth;
+    float threshold = bayer4x4(screenCoord) - 0.5;
 
     vec3 c = color.rgb;
     c = c * levels + threshold;
     c = floor(c) / levels;
     c = clamp(c, 0.0, 1.0);
 
-    // Scanlines (every other screen row darkens slightly)
     if (uScanlines) {
       float line = mod(floor(screenCoord.y), 2.0);
       c *= mix(1.0, 0.84, line);
     }
 
-    // Screen flicker
     c *= (1.0 - uFlicker * sin(uTime * 50.0) * 0.5);
+
+    c = clamp(c, 0.0, 1.0);
 
     gl_FragColor = vec4(c, 1.0);
   }
 `
 
 // ─── Apply PS1 material mixin ─────────────────────────────────────────────────
-// Call this on any THREE.Material to inject vertex snapping + affine UV via
-// onBeforeCompile. snapStrength: higher = more snapping (160 is typical).
-
 export function applyPS1Material(
   material: THREE.Material,
   options: {
@@ -143,17 +119,12 @@ export function applyPS1Material(
   const { snapStrength = 160, affineUV = true } = options
 
   material.onBeforeCompile = (shader) => {
-    // Declare custom varyings at top of both shaders
-    const varyingDecl = affineUV
-      ? 'varying vec3 vAffineUV;\n'
-      : ''
+    const varyingDecl = affineUV ? 'varying vec3 vAffineUV;\n' : ''
 
     shader.vertexShader = varyingDecl + shader.vertexShader
-
     shader.vertexShader = shader.vertexShader.replace(
       '#include <project_vertex>',
       `#include <project_vertex>
-      // PS1 vertex snapping
       {
         vec4 sp = gl_Position;
         sp.xyz /= sp.w;
@@ -161,14 +132,12 @@ export function applyPS1Material(
         sp.xyz *= sp.w;
         gl_Position = sp;
       }
-      ${affineUV ? '// Affine UV: pass uv*w so perspective correction = screen-linear\nvAffineUV = vec3(vMapUv * gl_Position.w, gl_Position.w);' : ''}
+      ${affineUV ? 'vAffineUV = vec3(vMapUv * gl_Position.w, gl_Position.w);' : ''}
       `,
     )
 
     if (affineUV) {
       shader.fragmentShader = varyingDecl + shader.fragmentShader
-
-      // Replace map sampling to use affine UV
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <map_fragment>',
         `
@@ -185,13 +154,10 @@ export function applyPS1Material(
     }
   }
 
-  // Mark material as needing custom shader compilation
   material.needsUpdate = true
 }
 
 // ─── PS1 texture helper ───────────────────────────────────────────────────────
-// Ensures a texture uses nearest-filter (no smoothing) — critical for the look.
-
 export function ps1Texture<T extends THREE.Texture>(texture: T): T {
   texture.magFilter = THREE.NearestFilter
   texture.minFilter = THREE.NearestFilter
@@ -200,7 +166,7 @@ export function ps1Texture<T extends THREE.Texture>(texture: T): T {
 }
 
 // ─── Procedural texture generators ───────────────────────────────────────────
-// Creates simple low-res textures programmatically since we have no asset pipeline.
+// All use RGBAFormat (4 channels) — THREE.RGBFormat was removed in r152+.
 
 export function makeColorTexture(
   hex: string,
@@ -208,13 +174,14 @@ export function makeColorTexture(
   height = 4,
 ): THREE.DataTexture {
   const color = new THREE.Color(hex)
-  const data = new Uint8Array(width * height * 3)
+  const data = new Uint8Array(width * height * 4)
   for (let i = 0; i < width * height; i++) {
-    data[i * 3] = Math.round(color.r * 255)
-    data[i * 3 + 1] = Math.round(color.g * 255)
-    data[i * 3 + 2] = Math.round(color.b * 255)
+    data[i * 4] = Math.round(color.r * 255)
+    data[i * 4 + 1] = Math.round(color.g * 255)
+    data[i * 4 + 2] = Math.round(color.b * 255)
+    data[i * 4 + 3] = 255
   }
-  const tex = new THREE.DataTexture(data, width, height, THREE.RGBFormat)
+  const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat)
   tex.needsUpdate = true
   return ps1Texture(tex)
 }
@@ -222,15 +189,14 @@ export function makeColorTexture(
 export function makeWoodTexture(): THREE.DataTexture {
   const w = 64
   const h = 64
-  const data = new Uint8Array(w * h * 3)
+  const data = new Uint8Array(w * h * 4)
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 3
-      // Horizontal grain lines + slight noise
+      const i = (y * w + x) * 4
       const grain = Math.sin((y + x * 0.2) * 1.8) * 0.15
       const noise = (Math.random() - 0.5) * 0.08
-      const base = new THREE.Color('#3a2418')
-      const bright = new THREE.Color('#5a3828')
+      const base = new THREE.Color('#7a5838')
+      const bright = new THREE.Color('#a07848')
       const t = Math.max(0, Math.min(1, grain + noise + 0.5))
       const r = base.r + (bright.r - base.r) * t
       const g = base.g + (bright.g - base.g) * t
@@ -238,9 +204,10 @@ export function makeWoodTexture(): THREE.DataTexture {
       data[i] = Math.round(r * 255)
       data[i + 1] = Math.round(g * 255)
       data[i + 2] = Math.round(b * 255)
+      data[i + 3] = 255
     }
   }
-  const tex = new THREE.DataTexture(data, w, h, THREE.RGBFormat)
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat)
   tex.wrapS = THREE.RepeatWrapping
   tex.wrapT = THREE.RepeatWrapping
   tex.needsUpdate = true
@@ -250,7 +217,7 @@ export function makeWoodTexture(): THREE.DataTexture {
 export function makeRugTexture(): THREE.DataTexture {
   const w = 128
   const h = 128
-  const data = new Uint8Array(w * h * 3)
+  const data = new Uint8Array(w * h * 4)
   const colors = [
     new THREE.Color('#5c1f24'),
     new THREE.Color('#2d4a3a'),
@@ -260,26 +227,25 @@ export function makeRugTexture(): THREE.DataTexture {
   ]
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 3
-      // Persian-style concentric diamond pattern
+      const i = (y * w + x) * 4
       const cx = Math.abs(x - w / 2) / (w / 2)
       const cy = Math.abs(y - h / 2) / (h / 2)
       const d = Math.max(cx, cy)
       const ring = Math.floor(d * 5) % colors.length
-      const border = ((x % 8 < 2) || (y % 8 < 2)) ? 3 : ring
+      const border = (x % 8 < 2 || y % 8 < 2) ? 3 : ring
       const c = colors[Math.min(border, colors.length - 1)]
       data[i] = Math.round(c.r * 255)
       data[i + 1] = Math.round(c.g * 255)
       data[i + 2] = Math.round(c.b * 255)
+      data[i + 3] = 255
     }
   }
-  const tex = new THREE.DataTexture(data, w, h, THREE.RGBFormat)
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat)
   tex.needsUpdate = true
   return ps1Texture(tex)
 }
 
 export function makeRainSpriteSheet(): THREE.DataTexture {
-  // 8-frame rain animation: 64×128 total (64×16 per frame, stacked)
   const fw = 64
   const fh = 16
   const frames = 8
@@ -289,7 +255,6 @@ export function makeRainSpriteSheet(): THREE.DataTexture {
 
   for (let f = 0; f < frames; f++) {
     const yOffset = f * fh
-    // Random rain streaks per frame
     const numDrops = 12
     for (let d = 0; d < numDrops; d++) {
       const dropX = Math.floor((Math.sin(d * 137.5 + f * 0.7) * 0.5 + 0.5) * fw)
@@ -320,21 +285,22 @@ export function makeRainSpriteSheet(): THREE.DataTexture {
 export function makeFloorPlankTexture(): THREE.DataTexture {
   const w = 64
   const h = 64
-  const data = new Uint8Array(w * h * 3)
+  const data = new Uint8Array(w * h * 4)
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 3
+      const i = (y * w + x) * 4
       const plankLine = y % 16 === 0 || x % 32 === 0
       const grain = Math.sin(x * 0.4 + y * 0.1) * 0.12 + (Math.random() - 0.5) * 0.06
-      const base = plankLine ? new THREE.Color('#1e1008') : new THREE.Color('#3a2418')
+      const base = plankLine ? new THREE.Color('#3a2010') : new THREE.Color('#7a5030')
       const t = Math.max(0, Math.min(1, grain + 0.5))
-      const bright = new THREE.Color('#4a3020')
+      const bright = new THREE.Color('#9a7050')
       data[i] = Math.round((base.r + (bright.r - base.r) * t) * 255)
       data[i + 1] = Math.round((base.g + (bright.g - base.g) * t) * 255)
       data[i + 2] = Math.round((base.b + (bright.b - base.b) * t) * 255)
+      data[i + 3] = 255
     }
   }
-  const tex = new THREE.DataTexture(data, w, h, THREE.RGBFormat)
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat)
   tex.wrapS = THREE.RepeatWrapping
   tex.wrapT = THREE.RepeatWrapping
   tex.needsUpdate = true
@@ -344,13 +310,12 @@ export function makeFloorPlankTexture(): THREE.DataTexture {
 export function makeFaceTexture(eyeColor = '#222'): THREE.DataTexture {
   const w = 32
   const h = 32
-  const data = new Uint8Array(w * h * 3)
+  const data = new Uint8Array(w * h * 4)
   const skin = new THREE.Color('#c8a878')
   const eye = new THREE.Color(eyeColor)
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 3
-      // Two dot eyes
+      const i = (y * w + x) * 4
       const isEye =
         ((x === 10 || x === 11) && (y === 14 || y === 15)) ||
         ((x === 20 || x === 21) && (y === 14 || y === 15))
@@ -358,23 +323,23 @@ export function makeFaceTexture(eyeColor = '#222'): THREE.DataTexture {
       data[i] = Math.round(c.r * 255)
       data[i + 1] = Math.round(c.g * 255)
       data[i + 2] = Math.round(c.b * 255)
+      data[i + 3] = 255
     }
   }
-  const tex = new THREE.DataTexture(data, w, h, THREE.RGBFormat)
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat)
   tex.needsUpdate = true
   return ps1Texture(tex)
 }
 
-export function makeVinylLabelTexture(artDataUrl?: string): THREE.DataTexture {
-  // Fallback label if no art — just a colored circle center
+export function makeVinylLabelTexture(): THREE.DataTexture {
   const w = 32
   const h = 32
-  const data = new Uint8Array(w * h * 3)
+  const data = new Uint8Array(w * h * 4)
   const label = new THREE.Color('#c8a030')
   const black = new THREE.Color('#111111')
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 3
+      const i = (y * w + x) * 4
       const dx = x - w / 2
       const dy = y - h / 2
       const d = Math.sqrt(dx * dx + dy * dy)
@@ -382,32 +347,35 @@ export function makeVinylLabelTexture(artDataUrl?: string): THREE.DataTexture {
       data[i] = Math.round(c.r * 255)
       data[i + 1] = Math.round(c.g * 255)
       data[i + 2] = Math.round(c.b * 255)
+      data[i + 3] = 255
     }
   }
-  const tex = new THREE.DataTexture(data, w, h, THREE.RGBFormat)
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat)
   tex.needsUpdate = true
   return ps1Texture(tex)
 }
 
 export function makeAlbumPlaceholderTexture(index: number): THREE.DataTexture {
-  const w = 128
-  const h = 128
-  const data = new Uint8Array(w * h * 3)
+  const w = 64
+  const h = 64
+  const data = new Uint8Array(w * h * 4)
   const hues = [0, 30, 60, 120, 180, 210, 270, 300]
   const hue = hues[index % hues.length]
-  const base = new THREE.Color().setHSL(hue / 360, 0.4, 0.2)
-  const accent = new THREE.Color().setHSL(hue / 360, 0.6, 0.5)
+  // Solid dark square with subtle inner border — looks like an unlabeled record
+  const bg = new THREE.Color().setHSL(hue / 360, 0.25, 0.12)
+  const border = new THREE.Color().setHSL(hue / 360, 0.4, 0.28)
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 3
-      const stripe = Math.floor((x + y) / 16) % 2 === 0
-      const c = stripe ? base : accent
+      const i = (y * w + x) * 4
+      const isBorder = x < 4 || x >= w - 4 || y < 4 || y >= h - 4
+      const c = isBorder ? border : bg
       data[i] = Math.round(c.r * 255)
       data[i + 1] = Math.round(c.g * 255)
       data[i + 2] = Math.round(c.b * 255)
+      data[i + 3] = 255
     }
   }
-  const tex = new THREE.DataTexture(data, w, h, THREE.RGBFormat)
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat)
   tex.needsUpdate = true
   return ps1Texture(tex)
 }

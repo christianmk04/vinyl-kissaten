@@ -1,101 +1,143 @@
 'use client'
 
-import { useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useGameStore } from '@/lib/game/store'
-import { makeAlbumPlaceholderTexture, ps1Texture, applyPS1Material } from '@/lib/shaders/ps1'
-import { Text } from '@react-three/drei'
+import { makeAlbumPlaceholderTexture, ps1Texture } from '@/lib/shaders/ps1'
 
-const HELD_OFFSET = new THREE.Vector3(0.35, -0.35, -0.6)
-const HELD_TILT = new THREE.Euler(0.15, -0.25, 0.1)
+const SLEEVE_SIZE = 0.50
+
+const FORWARD_DIST = 0.52
+const RIGHT_OFFSET = 0.06
+const DOWN_OFFSET = -0.16
+const TILT_X = -0.50  // negative = top tilts toward camera (forward tilt)
+
+// Pre-allocated reusables
+const _tiltQuat = new THREE.Quaternion()
+const _tiltEuler = new THREE.Euler(TILT_X, 0, 0, 'YXZ')
+_tiltQuat.setFromEuler(_tiltEuler)
+const _flipAxis = new THREE.Vector3(0, 1, 0)
+const _flipQuat = new THREE.Quaternion()
+const _localOffset = new THREE.Vector3()
 
 export default function HeldRecord() {
   const { camera } = useThree()
   const heldAlbum = useGameStore((s) => s.heldAlbum)
   const heldSide = useGameStore((s) => s.heldSide)
+
   const groupRef = useRef<THREE.Group>(null)
-  const flipAnimRef = useRef({ flipping: false, progress: 0, targetSide: 'A' as 'A' | 'B' })
   const prevSideRef = useRef<'A' | 'B'>('A')
+
+  // Flip state: track offset (accumulated complete flips) + current animation
+  const flipOffsetRef = useRef(0)  // 0 or π — angle after last complete flip
+  const flipAnimRef = useRef({ active: false, progress: 0 })
 
   const artTex = useMemo(() => {
     if (!heldAlbum) return null
-    if (heldAlbum.artDataUrl) {
-      return ps1Texture(new THREE.TextureLoader().load(heldAlbum.artDataUrl))
-    }
+    if (heldAlbum.artDataUrl) return ps1Texture(new THREE.TextureLoader().load(heldAlbum.artDataUrl))
     return makeAlbumPlaceholderTexture(0)
   }, [heldAlbum?.artDataUrl])
 
-  const frontMat = useMemo(() => {
-    if (!artTex) return null
-    const m = new THREE.MeshLambertMaterial({ map: artTex, flatShading: true })
-    applyPS1Material(m, { snapStrength: 60 })
-    return m
-  }, [artTex])
+  // Detect flip trigger
+  useEffect(() => {
+    if (heldSide !== prevSideRef.current) {
+      prevSideRef.current = heldSide
+      flipAnimRef.current = { active: true, progress: 0 }
+    }
+  }, [heldSide])
 
-  const backMat = useMemo(() => {
-    const m = new THREE.MeshLambertMaterial({ color: '#c4b890', flatShading: true })
-    applyPS1Material(m, { snapStrength: 60, affineUV: false })
-    return m
-  }, [])
+  // Reset flip state when a new album is picked up
+  useEffect(() => {
+    flipOffsetRef.current = 0
+    flipAnimRef.current = { active: false, progress: 0 }
+    prevSideRef.current = 'A'
+  }, [heldAlbum?.id])
 
-  // Detect side flip
   useFrame((_, delta) => {
     if (!heldAlbum || !groupRef.current) return
 
-    if (heldSide !== prevSideRef.current && !flipAnimRef.current.flipping) {
-      flipAnimRef.current = { flipping: true, progress: 0, targetSide: heldSide }
-      prevSideRef.current = heldSide
-    }
-
-    // Flip animation
-    if (flipAnimRef.current.flipping) {
-      flipAnimRef.current.progress = Math.min(
-        1,
-        flipAnimRef.current.progress + delta / 0.6,
-      )
-      const angle = flipAnimRef.current.progress * Math.PI
-      groupRef.current.rotation.y = HELD_TILT.y + angle
+    // Animate flip progress with smoothstep ease-in-out over 700ms
+    if (flipAnimRef.current.active) {
+      flipAnimRef.current.progress = Math.min(1, flipAnimRef.current.progress + delta / 0.70)
       if (flipAnimRef.current.progress >= 1) {
-        flipAnimRef.current.flipping = false
+        flipAnimRef.current.active = false
+        // Accumulate the completed π rotation into the offset
+        flipOffsetRef.current = (flipOffsetRef.current + Math.PI) % (2 * Math.PI)
       }
-    } else {
-      groupRef.current.rotation.set(HELD_TILT.x, HELD_TILT.y, HELD_TILT.z)
     }
 
-    // Position relative to camera
-    const worldOffset = HELD_OFFSET.clone().applyQuaternion(camera.quaternion)
-    groupRef.current.position.copy(camera.position).add(worldOffset)
+    // Compute current flip angle: offset + smoothstep-eased in-progress portion
+    let flipAngle = flipOffsetRef.current
+    if (flipAnimRef.current.active) {
+      const p = flipAnimRef.current.progress
+      const eased = p * p * (3 - 2 * p)  // smoothstep
+      flipAngle += eased * Math.PI
+    }
 
-    // Gentle sway
+    // Position in camera-local space, then transform to world via the camera's
+    // full quaternion. This keeps the record glued to a fixed screen-space
+    // location, so it follows the view when looking up or down (no longer
+    // obscures what's directly in front of you when pitching the camera).
     const t = Date.now() / 1000
-    groupRef.current.position.y += Math.sin(t * 1.5) * 0.004
+    const floatY = Math.sin(t * 1.4) * 0.004
+    _localOffset.set(RIGHT_OFFSET, DOWN_OFFSET + floatY, -FORWARD_DIST)
+    _localOffset.applyQuaternion(camera.quaternion)
+    groupRef.current.position.copy(camera.position).add(_localOffset)
+
+    // Orientation: camera × tiltQuat × flipQuat (local Y axis rotation)
+    // This keeps the tilt constant throughout the flip — portrait-nail rotation
+    _flipQuat.setFromAxisAngle(_flipAxis, flipAngle)
+    groupRef.current.quaternion
+      .copy(camera.quaternion)
+      .multiply(_tiltQuat)
+      .multiply(_flipQuat)
   })
 
   if (!heldAlbum) return null
 
   return (
     <group ref={groupRef}>
-      {/* Sleeve front */}
-      <mesh position={[0, 0, 0.006]}>
-        <boxGeometry args={[0.28, 0.28, 0.001]} />
-        <primitive object={frontMat ?? backMat} attach="material" />
-      </mesh>
-      {/* Sleeve back */}
-      <mesh position={[0, 0, -0.006]} rotation={[0, Math.PI, 0]}>
-        <boxGeometry args={[0.28, 0.28, 0.001]} />
-        <primitive object={backMat} attach="material" />
-      </mesh>
-      {/* Side A/B badge */}
-      <Text
-        position={[0.11, -0.11, 0.015]}
-        fontSize={0.03}
-        color="#ffb56b"
-        anchorX="center"
-        anchorY="middle"
+      {/* Front face — art (MeshBasic so warm room lights don't tint album colors) */}
+      <mesh
+        position={[0, 0, 0.002]}
+        ref={(mesh) => { if (mesh) mesh.raycast = () => null }}
       >
-        {`Side ${heldSide}`}
-      </Text>
+        <boxGeometry args={[SLEEVE_SIZE, SLEEVE_SIZE, 0.002]} />
+        {artTex
+          ? <meshBasicMaterial map={artTex} />
+          : <meshBasicMaterial color="#3a2818" />}
+      </mesh>
+
+      {/* Back face — same album art */}
+      <mesh
+        position={[0, 0, -0.002]}
+        rotation={[0, Math.PI, 0]}
+        ref={(mesh) => { if (mesh) mesh.raycast = () => null }}
+      >
+        <boxGeometry args={[SLEEVE_SIZE, SLEEVE_SIZE, 0.002]} />
+        {artTex
+          ? <meshBasicMaterial map={artTex} />
+          : <meshBasicMaterial color="#3a2818" />}
+      </mesh>
+
+      {/* Left hand */}
+      <mesh
+        position={[-SLEEVE_SIZE * 0.35, -SLEEVE_SIZE * 0.46, 0.015]}
+        ref={(mesh) => { if (mesh) mesh.raycast = () => null }}
+      >
+        <boxGeometry args={[0.1, 0.07, 0.06]} />
+        <meshLambertMaterial color="#b08060" flatShading />
+      </mesh>
+
+      {/* Right hand */}
+      <mesh
+        position={[SLEEVE_SIZE * 0.35, -SLEEVE_SIZE * 0.46, 0.015]}
+        ref={(mesh) => { if (mesh) mesh.raycast = () => null }}
+      >
+        <boxGeometry args={[0.1, 0.07, 0.06]} />
+        <meshLambertMaterial color="#b08060" flatShading />
+      </mesh>
     </group>
   )
 }

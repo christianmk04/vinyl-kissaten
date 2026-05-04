@@ -7,6 +7,7 @@ import type {
   TonearmState,
   PlatterRpm,
   SpotifyPlaybackState,
+  PlaybackMode,
 } from '@/lib/types'
 
 interface GameStore {
@@ -24,6 +25,14 @@ interface GameStore {
   setAlbums: (albums: SpotifyAlbum[]) => void
   setShelvesByCategory: (map: Record<string, SpotifyAlbum[]>) => void
 
+  // ── Library load progress (for loading screen) ────────────────────────────
+  libraryLoadState: 'pending' | 'fetching' | 'processing' | 'done' | 'error'
+  libraryProgress: { loaded: number; total: number }
+  libraryError: string | null
+  setLibraryLoadState: (s: 'pending' | 'fetching' | 'processing' | 'done' | 'error') => void
+  setLibraryProgress: (p: { loaded: number; total: number }) => void
+  setLibraryError: (e: string | null) => void
+
   // ── Game state ────────────────────────────────────────────────────────────
   view: GameView
   setView: (v: GameView) => void
@@ -37,6 +46,7 @@ interface GameStore {
   loadedSide: RecordSide
   setLoadedAlbum: (album: SpotifyAlbum | null) => void
   flipLoadedRecord: () => void
+  pickUpFromTurntable: () => void
 
   sideATracks: SpotifyTrack[]
   sideBTracks: SpotifyTrack[]
@@ -56,6 +66,14 @@ interface GameStore {
 
   autoFlip: boolean
   setAutoFlip: (v: boolean) => void
+
+  // 'spotify' = full tracks via Web Playback SDK (no FX — DRM-locked stream)
+  // 'preview' = 30-second mp3 previews via Web Audio (full FX chain works)
+  playbackMode: PlaybackMode
+  setPlaybackMode: (m: PlaybackMode) => void
+
+  previewError: string | null
+  setPreviewError: (msg: string | null) => void
 
   // ── Playback state (from SDK) ─────────────────────────────────────────────
   playbackState: SpotifyPlaybackState | null
@@ -84,6 +102,18 @@ interface GameStore {
   showFlicker: boolean
   toggleFlicker: () => void
 
+  // ── Turntable audio/visual knobs ─────────────────────────────────────────
+  brightness: number  // -1..+1  tone — peaking presence + air shelf
+  pitch: number       // -1..+1  pitch fader position (scaled by pitchRange)
+  pitchRange: 10 | 20 | 50  // LP1240-style pitch fader range in percent
+  quartzLock: boolean // LP1240 quartz lock — bypasses pitch fader when true
+  wowFlutter: number  // 0..1  LFO depth on playback rate
+  setBrightness: (v: number) => void
+  setPitch: (v: number) => void
+  setPitchRange: (r: 10 | 20 | 50) => void
+  setQuartzLock: (b: boolean) => void
+  setWowFlutter: (v: number) => void
+
   // Shelf detail context
   activeShelfCategory: string | null
   activeShelfPage: number
@@ -107,6 +137,13 @@ export const useGameStore = create<GameStore>((set) => ({
   setAlbums: (albums) => set({ albums }),
   setShelvesByCategory: (map) => set({ shelvesByCategory: map }),
 
+  libraryLoadState: 'pending',
+  libraryProgress: { loaded: 0, total: 0 },
+  libraryError: null,
+  setLibraryLoadState: (s) => set({ libraryLoadState: s }),
+  setLibraryProgress: (p) => set({ libraryProgress: p }),
+  setLibraryError: (e) => set({ libraryError: e }),
+
   // ── Game state ────────────────────────────────────────────────────────────
   view: 'first-person',
   setView: (v) => set({ view: v }),
@@ -122,6 +159,13 @@ export const useGameStore = create<GameStore>((set) => ({
   setLoadedAlbum: (album) => set({ loadedAlbum: album, loadedSide: 'A' }),
   flipLoadedRecord: () =>
     set((s) => ({ loadedSide: s.loadedSide === 'A' ? 'B' : 'A' })),
+  pickUpFromTurntable: () =>
+    set((s) => ({
+      heldAlbum: s.loadedAlbum,
+      heldSide: s.loadedSide,
+      loadedAlbum: null,
+      tonearmState: 'rest' as TonearmState,
+    })),
 
   sideATracks: [],
   sideBTracks: [],
@@ -142,6 +186,12 @@ export const useGameStore = create<GameStore>((set) => ({
   autoFlip: false,
   setAutoFlip: (v) => set({ autoFlip: v }),
 
+  playbackMode: 'spotify',
+  setPlaybackMode: (m) => set({ playbackMode: m }),
+
+  previewError: null,
+  setPreviewError: (msg) => set({ previewError: msg }),
+
   playbackState: null,
   setPlaybackState: (s) => set({ playbackState: s }),
 
@@ -149,7 +199,7 @@ export const useGameStore = create<GameStore>((set) => ({
   setEndOfSideReached: (v) => set({ endOfSideReached: v }),
 
   // ── World ─────────────────────────────────────────────────────────────────
-  timeOfDay: 0.85, // start at dusk — most atmospheric
+  timeOfDay: 0.65, // start at late afternoon — warm and visible
   cycleSpeed: 1,
   setTimeOfDay: (t) => set({ timeOfDay: t }),
   setCycleSpeed: (s) => set({ cycleSpeed: s }),
@@ -167,6 +217,17 @@ export const useGameStore = create<GameStore>((set) => ({
 
   showFlicker: false,
   toggleFlicker: () => set((s) => ({ showFlicker: !s.showFlicker })),
+
+  brightness: 0,
+  pitch: 0,
+  pitchRange: 10,
+  quartzLock: false,
+  wowFlutter: 0,
+  setBrightness: (v) => set({ brightness: v }),
+  setPitch: (v) => set({ pitch: v }),
+  setPitchRange: (r) => set({ pitchRange: r }),
+  setQuartzLock: (b) => set({ quartzLock: b }),
+  setWowFlutter: (v) => set({ wowFlutter: v }),
 
   activeShelfCategory: null,
   activeShelfPage: 0,

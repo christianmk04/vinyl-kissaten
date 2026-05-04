@@ -2,68 +2,90 @@
 
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { Text } from '@react-three/drei'
-import { applyPS1Material, makeAlbumPlaceholderTexture, ps1Texture } from '@/lib/shaders/ps1'
+import { makeAlbumPlaceholderTexture, ps1Texture } from '@/lib/shaders/ps1'
 import { interactions } from '@/lib/game/interactions'
+import { useGameStore } from '@/lib/game/store'
 import type { SpotifyAlbum } from '@/lib/types'
 
-interface AlbumSpineProps {
+export default function AlbumSpine({
+  album,
+  position,
+  index,
+  onSelect,
+}: {
   album: SpotifyAlbum
   position: [number, number, number]
   index: number
   onSelect: (album: SpotifyAlbum) => void
-}
-
-export default function AlbumSpine({ album, position, index, onSelect }: AlbumSpineProps) {
+}) {
   const meshRef = useRef<THREE.Mesh>(null)
+  const heldAlbum = useGameStore((s) => s.heldAlbum)
+  const setHeldAlbum = useGameStore((s) => s.setHeldAlbum)
+  // Album is "out" if the player is holding it OR it's currently spinning
+  // on the turntable — either way the slot on the shelf should be empty.
+  const loadedAlbum = useGameStore((s) => s.loadedAlbum)
+  const isHeld = heldAlbum?.id === album.id
+  const isLoaded = loadedAlbum?.id === album.id
+  const isOut = isHeld || isLoaded
 
   const artTex = useMemo(() => {
     if (album.artDataUrl) {
       const loader = new THREE.TextureLoader()
-      const tex = loader.load(album.artDataUrl)
-      return ps1Texture(tex)
+      return ps1Texture(loader.load(album.artDataUrl))
     }
     return makeAlbumPlaceholderTexture(index)
   }, [album.artDataUrl, index])
 
-  const mat = useMemo(() => {
-    const m = new THREE.MeshLambertMaterial({
-      map: artTex,
-      flatShading: true,
-    })
-    applyPS1Material(m, { snapStrength: 80 })
-    return m
-  }, [artTex])
+  // MeshBasicMaterial — unaffected by the warm pendant lights, so album colors
+  // stay true to the source instead of getting tinted orange by the room.
+  const mat = useMemo(
+    () => new THREE.MeshBasicMaterial({ map: artTex }),
+    [artTex],
+  )
+
+  // Empty-slot material — a faint dark rectangle that reads as "this slot is
+  // empty" against the back panel. Stays raycastable so the player can press
+  // E on the gap to put the held record back.
+  const emptyMat = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: '#0a0604',
+        transparent: true,
+        opacity: 0.55,
+      }),
+    [],
+  )
 
   useEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
-    interactions.register(mesh.uuid, 'Press E to pick up', () => onSelect(album))
+    if (isHeld) {
+      // While held, the slot is the "put it back" affordance.
+      const label = `Press E to put ${album.name} back`
+      interactions.register(mesh.uuid, label, () => setHeldAlbum(null))
+    } else if (isLoaded) {
+      // On turntable — no slot interaction; the record lives on the deck now.
+      interactions.unregister(mesh.uuid)
+    } else {
+      interactions.register(mesh.uuid, 'Press E to pick up', () => onSelect(album))
+    }
     return () => interactions.unregister(mesh.uuid)
-  }, [album, onSelect])
+  }, [album, onSelect, isHeld, isLoaded, setHeldAlbum])
 
-  const artistName = album.artists[0]?.name ?? ''
-  const shortTitle = album.name.length > 12 ? album.name.slice(0, 11) + '…' : album.name
+  // Face-out cover: 50×50cm slab with art facing +z (toward the player).
+  // When the album is "out" (held or on turntable), render a thin recessed
+  // placeholder instead of the cover so the shelf visibly has a missing record.
+  if (isOut) {
+    return (
+      <mesh ref={meshRef} position={[position[0], position[1], position[2] - 0.04]} material={emptyMat}>
+        <boxGeometry args={[0.48, 0.48, 0.004]} />
+      </mesh>
+    )
+  }
 
   return (
-    <group position={position}>
-      {/* Spine box — 3cm wide, 28cm tall, 28cm deep */}
-      <mesh ref={meshRef} material={mat}>
-        <boxGeometry args={[0.03, 0.28, 0.28]} />
-      </mesh>
-      {/* Artist name on spine (very tiny, rotated) */}
-      <Text
-        position={[0.02, 0, 0]}
-        rotation={[0, Math.PI / 2, -Math.PI / 2]}
-        fontSize={0.018}
-        color="#e8d5a8"
-        anchorX="center"
-        anchorY="middle"
-        maxWidth={0.25}
-        letterSpacing={0.02}
-      >
-        {shortTitle}
-      </Text>
-    </group>
+    <mesh ref={meshRef} position={position} material={mat}>
+      <boxGeometry args={[0.50, 0.50, 0.012]} />
+    </mesh>
   )
 }
