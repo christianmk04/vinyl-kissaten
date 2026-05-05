@@ -8,9 +8,17 @@ import { useGameStore } from '@/lib/game/store'
 export default function SpotifyAuthGate() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Whether public/library.json exists. If yes, expose a guest entry so
+  // visitors who don't (or can't) sign in with Spotify still get the cafe.
+  // We probe with a HEAD request so we don't waste bandwidth on the snapshot
+  // file itself unless the user actually clicks the guest button.
+  const [snapshotAvailable, setSnapshotAvailable] = useState<boolean | null>(null)
   const spotifyToken = useGameStore((s) => s.spotifyToken)
+  const guestMode = useGameStore((s) => s.guestMode)
   const setSpotifyToken = useGameStore((s) => s.setSpotifyToken)
   const setIsPremium = useGameStore((s) => s.setIsPremium)
+  const setGuestMode = useGameStore((s) => s.setGuestMode)
+  const setPlaybackMode = useGameStore((s) => s.setPlaybackMode)
 
   useEffect(() => {
     // Handle OAuth callback code in URL
@@ -63,7 +71,25 @@ export default function SpotifyAuthGate() {
     }
   }, [])
 
-  if (spotifyToken) return null
+  // Probe for the static library snapshot once on mount. This is cheap (a
+  // single HEAD request) and lets us hide the guest button on instances that
+  // haven't been snapshotted yet rather than letting users click it and hit
+  // a 404.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/library.json', { method: 'HEAD' })
+      .then((res) => {
+        if (!cancelled) setSnapshotAvailable(res.ok)
+      })
+      .catch(() => {
+        if (!cancelled) setSnapshotAvailable(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (spotifyToken || guestMode) return null
 
   return (
     <div
@@ -187,6 +213,61 @@ export default function SpotifyAuthGate() {
         >
           {loading ? 'CONNECTING...' : 'SIGN IN WITH SPOTIFY'}
         </button>
+
+        {snapshotAvailable && (
+          <>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                margin: '1rem 0 0.75rem',
+                color: '#5a4838',
+                fontSize: '9px',
+                letterSpacing: '0.2em',
+              }}
+            >
+              <div style={{ flex: 1, height: '1px', background: '#3a2a1a' }} />
+              OR
+              <div style={{ flex: 1, height: '1px', background: '#3a2a1a' }} />
+            </div>
+
+            <button
+              disabled={loading}
+              onClick={() => {
+                // Guest path: skip Spotify entirely. The library loader will
+                // pull from /library.json and previewPlayer will use the
+                // baked Deezer preview URLs. Force preview mode so
+                // useTonearmPlayback doesn't try to talk to the SDK.
+                setPlaybackMode('preview')
+                setGuestMode(true)
+              }}
+              style={{
+                background: 'transparent',
+                color: '#cc8833',
+                border: '1px solid #5a3828',
+                padding: '0.6rem 2rem',
+                fontSize: '11px',
+                fontFamily: 'Courier New, monospace',
+                letterSpacing: '0.15em',
+                cursor: loading ? 'default' : 'pointer',
+                width: '100%',
+              }}
+            >
+              ENTER AS GUEST
+            </button>
+            <div
+              style={{
+                fontSize: '9px',
+                color: '#5a4838',
+                marginTop: '0.5rem',
+                lineHeight: 1.5,
+              }}
+            >
+              Browse the host&apos;s record collection · 30-second previews · no account needed
+            </div>
+          </>
+        )}
 
         <div style={{ fontSize: '9px', color: '#4a3828', marginTop: '1.5rem' }}>
           Desktop: WASD + Mouse · E to interact · F to flip record

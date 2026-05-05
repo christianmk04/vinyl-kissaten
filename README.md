@@ -72,7 +72,7 @@ NEXT_PUBLIC_REDIRECT_URI=http://127.0.0.1:3000/api/spotify/callback
 
 ## Gameplay Flow
 
-1. Sign in with Spotify (Premium required)
+1. Sign in with Spotify (Premium, full tracks) **or** enter as guest (30s previews from a baked snapshot — see [Guest Mode](#public-access-guest-mode))
 2. Walk to the vinyl shelves on the back wall
 3. Press `E` near a shelf to pick up a record (Side A facing)
 4. Press `F` to flip to Side B if desired
@@ -84,13 +84,45 @@ NEXT_PUBLIC_REDIRECT_URI=http://127.0.0.1:3000/api/spotify/callback
 
 ---
 
+## Public Access (Guest Mode)
+
+Spotify locks signed-in playback behind two walls — a Premium requirement and a 25-user development-mode allowlist — which makes the deployed URL useless to anyone not on the host's allowlist with a Premium account. Guest Mode is the workaround.
+
+### How it works
+1. The host runs `pnpm snapshot` once to bake their saved-album library into `public/library.json`. The script:
+   - Pulls all your saved albums + track lists from Spotify
+   - Looks up each track on **Deezer's free public API** to grab a 30-second preview MP3 URL (Spotify removed `preview_url` from their API in late 2024)
+   - Writes the consolidated snapshot to `public/library.json`
+2. The auth gate detects the snapshot and shows a second button: **ENTER AS GUEST**.
+3. Guests browse the host's shelves and hear 30-second previews — no Spotify account, no Premium, no allowlist.
+4. The host can still sign in with Spotify for their own full-track playback experience.
+
+### Refreshing the snapshot
+```bash
+# 1. Run the dev app and sign in with Spotify
+pnpm dev
+
+# 2. Open devtools → Application → Local Storage → http://127.0.0.1:3000
+#    Copy the value of `spotify_access_token`
+
+# 3. Run the snapshot
+SPOTIFY_TOKEN=BQ...your_token... pnpm snapshot
+```
+
+The snapshot is committed to the repo and shipped as a static asset, so re-run it whenever your library meaningfully changes. The output is typically a few hundred KB to ~2 MB depending on library size.
+
+### Tracks without previews
+Some tracks won't match anything on Deezer (very obscure releases, some live recordings, region-locked titles). Those tracks appear in the cafe but stay silent when the needle drops. The snapshot script reports the hit rate at the end.
+
+---
+
 ## Important Spotify Notes
 
-### Premium Required
-The Spotify Web Playback SDK requires a Premium account. Free accounts will see an error when the device tries to initialize. There is no workaround.
+### Premium Required (signed-in mode only)
+The Spotify Web Playback SDK requires a Premium account. Free accounts will see an error when the device tries to initialize. **Guest mode bypasses this entirely** — preview playback runs through Web Audio with no SDK involvement.
 
-### Development Mode User Allowlist
-In development mode, your Spotify app can only be used by up to **25 users** who have been explicitly added in the developer dashboard under **Users and Access**. To open the app to the public, apply for **Extended Quota Mode** in the dashboard.
+### Development Mode User Allowlist (signed-in mode only)
+In development mode, your Spotify app can only be used by up to **25 users** who have been explicitly added in the developer dashboard under **Users and Access**. To open the app to the public, either apply for **Extended Quota Mode** in the dashboard, or just rely on Guest Mode (recommended for hobby deploys).
 
 ### localhost vs 127.0.0.1 (Important — April 2025)
 As of April 2025, Spotify no longer accepts `localhost` in redirect URIs. You **must**:

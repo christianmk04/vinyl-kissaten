@@ -15,9 +15,15 @@ interface GameStore {
   spotifyToken: string | null
   spotifyDeviceId: string | null
   isPremium: boolean | null
+  // Guest mode = visitor browsing the host's pre-baked library snapshot
+  // (public/library.json) with 30s previews, no Spotify account needed.
+  // When true, the app skips the Web Playback SDK and reads tracks from the
+  // snapshot directly. Forced in tandem with playbackMode='preview'.
+  guestMode: boolean
   setSpotifyToken: (token: string | null) => void
   setSpotifyDeviceId: (id: string | null) => void
   setIsPremium: (v: boolean) => void
+  setGuestMode: (v: boolean) => void
 
   // ── Library ───────────────────────────────────────────────────────────────
   albums: SpotifyAlbum[]
@@ -127,9 +133,11 @@ export const useGameStore = create<GameStore>((set) => ({
   spotifyToken: null,
   spotifyDeviceId: null,
   isPremium: null,
+  guestMode: false,
   setSpotifyToken: (token) => set({ spotifyToken: token }),
   setSpotifyDeviceId: (id) => set({ spotifyDeviceId: id }),
   setIsPremium: (v) => set({ isPremium: v }),
+  setGuestMode: (v) => set({ guestMode: v }),
 
   // ── Library ───────────────────────────────────────────────────────────────
   albums: [],

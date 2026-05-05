@@ -9,6 +9,20 @@ import { fetchAlbumTracks } from '@/lib/spotify/library'
 import { splitSides } from '@/lib/spotify/sides'
 import { playSound, duckChatForMusic, unduckChat } from '@/lib/audio/howlerSetup'
 import * as preview from '@/lib/audio/previewPlayer'
+import type { SpotifyAlbum, SpotifyTrack } from '@/lib/types'
+
+// Resolve the track list for a loaded album. Snapshots (guest mode) bake the
+// full track list into album.tracks so we can skip the API call entirely.
+// Signed-in users with a fresh /me/albums response don't have tracks attached,
+// so we fall back to fetching from Spotify when needed.
+async function resolveTracks(
+  album: SpotifyAlbum,
+  spotifyToken: string | null,
+): Promise<SpotifyTrack[]> {
+  if (album.tracks && album.tracks.length > 0) return album.tracks
+  if (!spotifyToken) return []
+  return fetchAlbumTracks(album.id, spotifyToken)
+}
 
 // Frontal camera: standing in front of turntable, looking down at the deck
 const FRONTAL_POS = new THREE.Vector3(3.1, 1.55, 1.2)
@@ -201,8 +215,9 @@ export function useTonearmPlayback() {
     if (!loadedAlbum) return
 
     // ── Preview mode — Web Audio path with full FX ─────────────────────────
+    // Reachable for both guest mode (no token, snapshot tracks) and signed-in
+    // users who toggled into preview mode. resolveTracks handles both cases.
     if (playbackMode === 'preview') {
-      if (!spotifyToken) return
       if (tonearmState === 'playing' && prev !== 'playing') {
         useGameStore.getState().setPreviewError(null)
         const key = `${loadedAlbum.id}::${loadedSide}::preview`
@@ -212,7 +227,7 @@ export function useTonearmPlayback() {
           setIsPlaying(true)
         } else {
           loadedKeyRef.current = key
-          fetchAlbumTracks(loadedAlbum.id, spotifyToken).then(async (tracks) => {
+          resolveTracks(loadedAlbum, spotifyToken).then(async (tracks) => {
             const { sideA, sideB } = splitSides(tracks)
             setSideTracks(sideA, sideB)
             const sideTracks = loadedSide === 'A' ? sideA : sideB
@@ -251,7 +266,7 @@ export function useTonearmPlayback() {
         }
       } else {
         loadedKeyRef.current = key
-        fetchAlbumTracks(loadedAlbum.id, spotifyToken).then((tracks) => {
+        resolveTracks(loadedAlbum, spotifyToken).then((tracks) => {
           const { sideA, sideB } = splitSides(tracks)
           setSideTracks(sideA, sideB)
           const sideTracks = loadedSide === 'A' ? sideA : sideB

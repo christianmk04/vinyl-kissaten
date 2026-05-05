@@ -10,7 +10,7 @@ import {
   downsampleArtwork,
 } from '@/lib/spotify/library'
 import { initPlayer } from '@/lib/spotify/player'
-import type { SpotifyPlaybackState } from '@/lib/types'
+import type { SpotifyAlbum, SpotifyPlaybackState } from '@/lib/types'
 import { startVinylEffects } from '@/lib/audio/vinylEffects'
 
 // Scene components
@@ -135,6 +135,7 @@ function Scene() {
 // ─── Library loader hook ───────────────────────────────────────────────────────
 function useLibraryLoader() {
   const spotifyToken = useGameStore((s) => s.spotifyToken)
+  const guestMode = useGameStore((s) => s.guestMode)
   const setAlbums = useGameStore((s) => s.setAlbums)
   const setShelvesByCategory = useGameStore((s) => s.setShelvesByCategory)
   const setSpotifyDeviceId = useGameStore((s) => s.setSpotifyDeviceId)
@@ -144,7 +145,12 @@ function useLibraryLoader() {
   const loadedRef = useRef(false)
 
   useEffect(() => {
-    if (!spotifyToken || loadedRef.current) return
+    // Two entry conditions for kicking off a load:
+    //   - Spotify token present → fetch from Spotify API
+    //   - Guest mode active     → fetch the static snapshot
+    // Otherwise sit idle until the auth gate produces one of those.
+    if (loadedRef.current) return
+    if (!spotifyToken && !guestMode) return
     loadedRef.current = true
 
     setLibraryError(null)
@@ -152,7 +158,21 @@ function useLibraryLoader() {
 
     ;(async () => {
       try {
-        const albums = await fetchSavedAlbums(spotifyToken)
+        // ── Source: snapshot (guest) vs Spotify API (signed-in) ────────────
+        let albums: SpotifyAlbum[]
+        if (guestMode) {
+          const res = await fetch('/library.json', { cache: 'force-cache' })
+          if (!res.ok) {
+            throw new Error(`Snapshot not found (HTTP ${res.status}).`)
+          }
+          const data = (await res.json()) as { albums: SpotifyAlbum[] }
+          albums = data.albums ?? []
+        } else if (spotifyToken) {
+          albums = await fetchSavedAlbums(spotifyToken)
+        } else {
+          albums = []
+        }
+
         setLibraryLoadState('processing')
         setLibraryProgress({ loaded: 0, total: albums.length })
 
@@ -200,23 +220,28 @@ function useLibraryLoader() {
       }
     })()
 
-    // Init Spotify Web Playback SDK in parallel with the library fetch
-    initPlayer(
-      spotifyToken,
-      (state: SpotifyPlaybackState | null) => {
-        useGameStore.getState().setPlaybackState(state)
-        if (state) {
-          useGameStore.getState().setIsPlaying(!state.paused)
-        }
-      },
-      (deviceId: string) => {
-        setSpotifyDeviceId(deviceId)
-      },
-      (err: string) => {
-        console.error('Spotify player error:', err)
-      },
-    )
-  }, [spotifyToken, setLibraryLoadState, setLibraryProgress, setLibraryError])
+    // Init Spotify Web Playback SDK in parallel with the library fetch — but
+    // ONLY for signed-in users. Guests don't have a token (and aren't
+    // necessarily Premium), and preview-mode playback runs through Web Audio
+    // directly without ever touching the SDK.
+    if (spotifyToken && !guestMode) {
+      initPlayer(
+        spotifyToken,
+        (state: SpotifyPlaybackState | null) => {
+          useGameStore.getState().setPlaybackState(state)
+          if (state) {
+            useGameStore.getState().setIsPlaying(!state.paused)
+          }
+        },
+        (deviceId: string) => {
+          setSpotifyDeviceId(deviceId)
+        },
+        (err: string) => {
+          console.error('Spotify player error:', err)
+        },
+      )
+    }
+  }, [spotifyToken, guestMode, setLibraryLoadState, setLibraryProgress, setLibraryError, setAlbums, setShelvesByCategory, setSpotifyDeviceId])
 }
 
 // ─── Main Cafe component ───────────────────────────────────────────────────────
@@ -228,6 +253,9 @@ export default function Cafe() {
   const [hoverLabel, setHoverLabel] = useState<string | null>(null)
   const view = useGameStore((s) => s.view)
   const spotifyToken = useGameStore((s) => s.spotifyToken)
+  const guestMode = useGameStore((s) => s.guestMode)
+  // Either auth path satisfies the gate — Spotify sign-in or "enter as guest"
+  const sessionReady = !!spotifyToken || guestMode
 
   // Only show mobile joystick on touch devices
   const mobile = typeof window !== 'undefined' && 'ontouchstart' in window
@@ -253,12 +281,13 @@ export default function Cafe() {
                (not a fixed timer) so users with big libraries see actual progress.
             3. After loading completes, InstructionsScreen shows controls,
                headphone tip, and an empty-library hint if they have no albums.
-            We only mount LoadingScreen / InstructionsScreen once a token exists,
-            otherwise the user would see them flash before the auth gate. */}
-      {spotifyToken && phase === 'loading' && (
+            We only mount LoadingScreen / InstructionsScreen once auth has
+            resolved (Spotify sign-in OR guest mode), otherwise the user would
+            see them flash before the auth gate. */}
+      {sessionReady && phase === 'loading' && (
         <LoadingScreen onComplete={() => setPhase('instructions')} />
       )}
-      {spotifyToken && phase === 'instructions' && (
+      {sessionReady && phase === 'instructions' && (
         <InstructionsScreen onDismiss={() => setPhase('ready')} />
       )}
 
