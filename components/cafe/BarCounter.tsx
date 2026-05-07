@@ -21,28 +21,6 @@ export default function BarCounter() {
     return m
   }, [darkTex])
 
-  const steamRef = useRef<THREE.Points>(null)
-  const steamPositions = useMemo(() => {
-    const arr = new Float32Array(20 * 3)
-    for (let i = 0; i < 20; i++) {
-      arr[i * 3] = (Math.random() - 0.5) * 0.08
-      arr[i * 3 + 1] = Math.random() * 0.3
-      arr[i * 3 + 2] = (Math.random() - 0.5) * 0.08
-    }
-    return arr
-  }, [])
-
-  useFrame(({ clock }) => {
-    if (!steamRef.current) return
-    const pos = steamRef.current.geometry.attributes.position.array as Float32Array
-    const t = clock.getElapsedTime()
-    for (let i = 0; i < 20; i++) {
-      pos[i * 3 + 1] = ((pos[i * 3 + 1] + 0.008) % 0.4)
-      pos[i * 3] += Math.sin(t * 2 + i) * 0.0008
-    }
-    steamRef.current.geometry.attributes.position.needsUpdate = true
-  })
-
   return (
     <>
       {/* ── Bar counter along front wall ─────────────────────────────────── */}
@@ -61,7 +39,7 @@ export default function BarCounter() {
             (1.09) + 0.20 = 1.29 so the bottom flushes with the counter).
             Faces -z (into the room) so the player sees the group head and
             portafilter from the seating side. */}
-        <EspressoMachine position={[0.8, 1.29, 0]} steamRef={steamRef} steamPositions={steamPositions} />
+        <EspressoMachine position={[0.8, 1.29, 0]} />
 
         {/* Coffee cups */}
         {[[-0.8, 0], [0, 0], [-1.2, 0]].map(([x, z], i) => (
@@ -141,13 +119,36 @@ export default function BarCounter() {
 // room (where the player stands), +z faces the barista behind the counter.
 function EspressoMachine({
   position,
-  steamRef,
-  steamPositions,
 }: {
   position: [number, number, number]
-  steamRef: React.RefObject<THREE.Points | null>
-  steamPositions: Float32Array
 }) {
+  // Steam particles are owned by this component (rather than passed in via
+  // props) because R3F's <points ref={...}> typing wants a non-nullable
+  // RefObject<Points>, while useRef<Points>(null) at the call site widens
+  // to RefObject<Points | null>. Keeping the ref local sidesteps the
+  // mismatch entirely and makes the machine self-contained.
+  const steamRef = useRef<THREE.Points>(null)
+  const steamPositions = useMemo(() => {
+    const arr = new Float32Array(20 * 3)
+    for (let i = 0; i < 20; i++) {
+      arr[i * 3] = (Math.random() - 0.5) * 0.08
+      arr[i * 3 + 1] = Math.random() * 0.3
+      arr[i * 3 + 2] = (Math.random() - 0.5) * 0.08
+    }
+    return arr
+  }, [])
+
+  useFrame(({ clock }) => {
+    if (!steamRef.current) return
+    const pos = steamRef.current.geometry.attributes.position.array as Float32Array
+    const t = clock.getElapsedTime()
+    for (let i = 0; i < 20; i++) {
+      pos[i * 3 + 1] = (pos[i * 3 + 1] + 0.008) % 0.4
+      pos[i * 3] += Math.sin(t * 2 + i) * 0.0008
+    }
+    steamRef.current.geometry.attributes.position.needsUpdate = true
+  })
+
   return (
     <group position={position}>
       {/* === MAIN BODY (polished steel) === */}
