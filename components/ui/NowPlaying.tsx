@@ -76,9 +76,19 @@ export default function NowPlaying() {
   const spotifyDeviceId = useGameStore((s) => s.spotifyDeviceId)
   const playbackMode = useGameStore((s) => s.playbackMode)
 
+  const view = useGameStore((s) => s.view)
   const live = useLiveScrub(isPlaying, playbackMode)
 
   if (!showNowPlaying || !loadedAlbum) return null
+
+  // On phones the turntable view is already crowded with the deck, the
+  // top-right TurntableControls panel, the bottom-right PLAY button, and the
+  // hint text. The now-playing panel duplicates info you can read off the
+  // labels and would be the third overlay fighting for the same screen, so
+  // we hide it specifically in that combination.
+  const isTouch =
+    typeof window !== 'undefined' && 'ontouchstart' in window
+  if (isTouch && view === 'turntable-top-down') return null
 
   const track = playbackState?.track_window?.current_track
   // Prefer the live-polled position/duration; fall back to whatever the
@@ -128,13 +138,16 @@ export default function NowPlaying() {
     }).catch(() => null)
   }
 
+  // On touch devices, lift the panel above the joystick (which sits at
+  // bottom: 30 with height 130 → top edge at ~160px). Also clamp the width
+  // so the panel can't crash into the PLAY button on narrow screens.
   return (
     <div
       style={{
         position: 'fixed',
-        bottom: '24px',
-        left: '24px',
-        width: '260px',
+        bottom: isTouch ? '180px' : '24px',
+        left: isTouch ? '12px' : '24px',
+        width: isTouch ? 'min(220px, calc(100vw - 140px))' : '260px',
         background: 'rgba(20, 12, 6, 0.92)',
         border: '1px solid #3a2418',
         padding: '12px',

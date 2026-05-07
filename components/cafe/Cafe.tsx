@@ -295,7 +295,11 @@ export default function Cafe() {
 
       <Canvas
         gl={{ antialias: false, powerPreference: 'high-performance' }}
-        camera={{ fov: 75, near: 0.1, far: 20, position: [0, 1.65, 0] }}
+        // On phones the screen is narrow and tall; a wider FOV keeps more of
+        // the room visible so the player isn't constantly panning the camera
+        // just to see what's near them. Desktop sticks to 75° because the
+        // wider aspect ratio already shows plenty.
+        camera={{ fov: mobile ? 88 : 75, near: 0.1, far: 20, position: [0, 1.65, 0] }}
         dpr={1}
         shadows
         style={{ position: 'absolute', inset: 0 }}

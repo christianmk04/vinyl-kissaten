@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { mobileInput } from '@/lib/game/mobileInput'
+import { useGameStore } from '@/lib/game/store'
 
 const JOYSTICK_RADIUS = 55 // px — max distance from origin the thumb travels
 
@@ -21,6 +22,24 @@ export default function MobileJoystick() {
   // We track the active pointer ID so a second finger landing on the
   // joystick doesn't fight the first.
   const pointerIdRef = useRef<number | null>(null)
+
+  // Hide the joystick when the player is at the turntable (top-down view) —
+  // there's nothing to walk to from here, the deck is the entire screen, so
+  // the joystick is just visual clutter overlapping the now-playing panel.
+  // The ACT button stays so the user has a one-tap PLAY/PAUSE.
+  const view = useGameStore((s) => s.view)
+  const isAtTurntable = view === 'turntable-top-down'
+  const isPlaying = useGameStore((s) => s.isPlaying)
+  const tonearmState = useGameStore((s) => s.tonearmState)
+
+  // ACT button label: in the cafe it's a generic "ACT" tap. At the deck it's
+  // the primary play/pause/cue cycle, so we surface that intent directly.
+  let actLabel = 'ACT'
+  if (isAtTurntable) {
+    if (tonearmState === 'playing' || isPlaying) actLabel = 'STOP'
+    else if (tonearmState === 'cued') actLabel = 'PLAY'
+    else actLabel = 'PLAY'
+  }
 
   useEffect(() => {
     const origin = originRef.current
@@ -92,7 +111,8 @@ export default function MobileJoystick() {
 
   return (
     <>
-      {/* Joystick origin — interactive (captures its own pointer events) */}
+      {/* Joystick origin — interactive (captures its own pointer events).
+          Hidden at the turntable since walking is meaningless there. */}
       <div
         ref={originRef}
         id="joystick-origin"
@@ -105,7 +125,7 @@ export default function MobileJoystick() {
           borderRadius: '50%',
           background: 'rgba(232, 213, 168, 0.08)',
           border: '1px solid rgba(232, 213, 168, 0.3)',
-          display: 'flex',
+          display: isAtTurntable ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 60,
@@ -159,27 +179,29 @@ export default function MobileJoystick() {
           touchAction: 'none',
         }}
       >
-        ACT
+        {actLabel}
       </button>
 
-      {/* Subtle right-side hint — only visible briefly on first load thanks
-          to its low opacity; hidden under any active drag because the
-          canvas sits beneath it */}
-      <div
-        style={{
-          position: 'fixed',
-          bottom: '32px',
-          right: '120px',
-          fontFamily: 'Courier New, monospace',
-          fontSize: '9px',
-          color: 'rgba(138, 112, 96, 0.5)',
-          letterSpacing: '0.1em',
-          pointerEvents: 'none',
-          zIndex: 60,
-        }}
-      >
-        DRAG TO LOOK · TAP TO INTERACT
-      </div>
+      {/* Subtle right-side hint — hidden at the turntable, where the visible
+          deck + on-screen "ACT cue/play/rest..." hint already explains what
+          the button does. */}
+      {!isAtTurntable && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '32px',
+            right: '120px',
+            fontFamily: 'Courier New, monospace',
+            fontSize: '9px',
+            color: 'rgba(138, 112, 96, 0.5)',
+            letterSpacing: '0.1em',
+            pointerEvents: 'none',
+            zIndex: 60,
+          }}
+        >
+          DRAG TO LOOK · TAP TO INTERACT
+        </div>
+      )}
     </>
   )
 }

@@ -96,19 +96,28 @@ export default function TurntableControls() {
     playSound('recordFlip')
   }
 
+  // On touch devices, the bottom-right is reserved for the big PLAY button
+  // and the bottom-left for the now-playing panel (and hint text). Anchor the
+  // controls panel to the top-right instead so the three never stack on each
+  // other on a phone-sized screen. We also cap the height with overflow so
+  // long FX columns don't run off-screen.
+  const isTouch =
+    typeof window !== 'undefined' && 'ontouchstart' in window
+
   return (
     <div style={{
       position: 'fixed',
-      bottom: '16px',
-      right: '16px',
-      background: 'rgba(8, 6, 4, 0.90)',
+      ...(isTouch
+        ? { top: '16px', right: '16px', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' as const }
+        : { bottom: '16px', right: '16px' }),
+      background: 'rgba(8, 6, 4, 0.92)',
       border: '1px solid #2a1810',
       padding: '12px 14px',
       fontFamily: 'Courier New, monospace',
       fontSize: '10px',
       color: '#a08060',
       zIndex: 50,
-      width: '200px',
+      width: isTouch ? '180px' : '200px',
     }}>
       <div style={{ marginBottom: '10px', color: '#e8d5a8', letterSpacing: '0.12em', fontSize: '11px' }}>
         TURNTABLE

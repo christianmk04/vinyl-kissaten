@@ -9,6 +9,13 @@ let initialized = false
 
 const sounds: Record<string, Howl> = {}
 
+// Ambient defaults — single source of truth for the "cafe is alive but quiet"
+// volumes. Music playback fades these to 0 so the record gets the listener's
+// full attention; lifting the needle restores them.
+const AMBIENT_RAIN = 0.4
+const AMBIENT_CHATTER = 0.25
+const AMBIENT_FADE_MS = 1200
+
 function make(src: string, options: Partial<ConstructorParameters<typeof Howl>[0]> = {}): Howl {
   return new Howl({ src: [src], ...options })
 }
@@ -26,11 +33,13 @@ export function initAudio() {
   sounds.switchClick = make('/audio/switch_click.mp3', { volume: 0.6 })
   sounds.recordFlip = make('/audio/record_flip.mp3', { volume: 0.4 })
 
-  // Fade in ambient sounds over 2s
+  // Fade in ambient sounds over 2s, using the same defaults that
+  // unduckChat() restores to so the cafe sounds the same on first load and
+  // after a record stops.
   sounds.rain.play()
-  sounds.rain.fade(0, 0.4, 2000)
+  sounds.rain.fade(0, AMBIENT_RAIN, 2000)
   sounds.chatter.play()
-  sounds.chatter.fade(0, 0.25, 2000)
+  sounds.chatter.fade(0, AMBIENT_CHATTER, 2000)
 
   // Random espresso machine one-shot every 30–90s
   scheduleEspresso()
@@ -55,12 +64,22 @@ export function playFootstep() {
   s.play()
 }
 
+// Called when a record starts playing. Silences the cafe ambience (rain on
+// the window + low patron chatter) so the music isn't fighting them. We
+// fade rather than stop() the loops so resuming after a track is gapless.
+//
+// Name kept for backwards compatibility with existing call sites — it now
+// silences ALL ambience, not just chatter.
 export function duckChatForMusic() {
-  sounds.chatter?.fade(0.25, 0.08, 1000)
+  sounds.chatter?.fade(sounds.chatter.volume() as number, 0, AMBIENT_FADE_MS)
+  sounds.rain?.fade(sounds.rain.volume() as number, 0, AMBIENT_FADE_MS)
 }
 
+// Called when the tonearm leaves "playing". Brings ambience back from
+// silence to its idle defaults.
 export function unduckChat() {
-  sounds.chatter?.fade(0.08, 0.25, 1000)
+  sounds.chatter?.fade(sounds.chatter.volume() as number, AMBIENT_CHATTER, AMBIENT_FADE_MS)
+  sounds.rain?.fade(sounds.rain.volume() as number, AMBIENT_RAIN, AMBIENT_FADE_MS)
 }
 
 export function setMasterVolume(v: number) {
