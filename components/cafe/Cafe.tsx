@@ -369,7 +369,9 @@ export default function Cafe() {
       {view === 'turntable-top-down' && (
         <div style={{
           position: 'fixed',
-          bottom: '40px',
+          // On mobile we lift the hint above the bottom-anchored ACT button
+          // and joystick so it doesn't get covered by them.
+          bottom: mobile ? '120px' : '40px',
           left: '50%',
           transform: 'translateX(-50%)',
           fontFamily: 'Courier New, monospace',
@@ -383,8 +385,11 @@ export default function Cafe() {
           background: 'rgba(0,0,0,0.45)',
           padding: '5px 14px',
           borderRadius: '2px',
+          maxWidth: 'calc(100vw - 32px)',
         }}>
-          ENTER play/stop · F flip record · G pick up · ESC exit
+          {mobile
+            ? 'ACT cue/play/rest · tap turntable controls to flip · tap album to lift'
+            : 'ENTER play/stop · F flip record · G pick up · ESC exit'}
         </div>
       )}
 

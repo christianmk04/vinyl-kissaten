@@ -106,10 +106,12 @@ export default function InstructionsScreen({ onDismiss }: InstructionsScreenProp
         <Section title={mobile ? 'CONTROLS — MOBILE' : 'CONTROLS — DESKTOP'}>
           {mobile ? (
             <>
-              <Row k="Left joystick" v="Walk around" />
-              <Row k="Drag right side" v="Look around" />
-              <Row k="Tap" v="Interact (pick up record, open turntable)" />
+              <Row k="Joystick (left)" v="Walk around" />
+              <Row k="Drag screen" v="Look around" />
+              <Row k="Tap on a thing" v="Interact (pick up, set down, open turntable)" />
+              <Row k="ACT button" v="Same as a tap, aimed at the screen center" />
               <Row k="Two-finger tap" v="Toggle now-playing panel" />
+              <Row k="▲ / ▼ near shelf" v="Browse to other shelf pages" />
             </>
           ) : (
             <>
@@ -118,6 +120,7 @@ export default function InstructionsScreen({ onDismiss }: InstructionsScreenProp
               <Row k="E or Enter" v="Interact (pick up record, open turntable)" />
               <Row k="F" v="Flip the record (Side A ↔ B)" />
               <Row k="[ / ]" v="Previous / next track" />
+              <Row k="PgUp / PgDn" v="Browse shelf pages (when near shelf)" />
               <Row k="Tab" v="Toggle now-playing panel" />
               <Row k="Esc" v="Drop the held record / leave turntable" />
             </>
@@ -126,17 +129,46 @@ export default function InstructionsScreen({ onDismiss }: InstructionsScreenProp
 
         {/* How to play */}
         <Section title="HOW IT WORKS">
-          <Bullet>Walk to the shelves, point at an album, and pick it up.</Bullet>
-          <Bullet>Carry it to the turntable and interact with the deck.</Bullet>
-          <Bullet>
-            On the deck: <strong style={{ color: '#e8d5a8' }}>Enter</strong> to drop the needle,{' '}
-            <strong style={{ color: '#e8d5a8' }}>F</strong> to flip,{' '}
-            <strong style={{ color: '#e8d5a8' }}>G</strong> to take the record off.
-          </Bullet>
-          <Bullet>
-            To put a record back, point at its empty slot on the shelf and press{' '}
-            <strong style={{ color: '#e8d5a8' }}>E</strong>.
-          </Bullet>
+          {mobile ? (
+            <>
+              <Bullet>
+                Use the <strong style={{ color: '#e8d5a8' }}>joystick</strong> to walk over to the
+                shelves. <strong style={{ color: '#e8d5a8' }}>Drag</strong> the screen to look
+                around.
+              </Bullet>
+              <Bullet>
+                <strong style={{ color: '#e8d5a8' }}>Tap an album</strong> to pick it up.
+                Carry it to the turntable.
+              </Bullet>
+              <Bullet>
+                <strong style={{ color: '#e8d5a8' }}>Tap the turntable</strong> to open the
+                top-down view, then tap <strong style={{ color: '#e8d5a8' }}>ACT</strong> to
+                cue → play → rest.
+              </Bullet>
+              <Bullet>
+                To put a record back, look at its empty slot on the shelf and tap.
+              </Bullet>
+              <Bullet>
+                Run out of room on a shelf? Walk up close — the{' '}
+                <strong style={{ color: '#e8d5a8' }}>▲ / ▼</strong> arrows appear at the top
+                of the screen so you can flip to the next set of records.
+              </Bullet>
+            </>
+          ) : (
+            <>
+              <Bullet>Walk to the shelves, point at an album, and pick it up.</Bullet>
+              <Bullet>Carry it to the turntable and interact with the deck.</Bullet>
+              <Bullet>
+                On the deck: <strong style={{ color: '#e8d5a8' }}>Enter</strong> to drop the needle,{' '}
+                <strong style={{ color: '#e8d5a8' }}>F</strong> to flip,{' '}
+                <strong style={{ color: '#e8d5a8' }}>G</strong> to take the record off.
+              </Bullet>
+              <Bullet>
+                To put a record back, point at its empty slot on the shelf and press{' '}
+                <strong style={{ color: '#e8d5a8' }}>E</strong>.
+              </Bullet>
+            </>
+          )}
         </Section>
 
         {/* Playback modes */}
@@ -189,17 +221,19 @@ export default function InstructionsScreen({ onDismiss }: InstructionsScreenProp
         >
           ENTER THE KISSATEN
         </button>
-        <div
-          style={{
-            fontSize: '9px',
-            color: '#4a3828',
-            marginTop: '8px',
-            textAlign: 'center',
-            letterSpacing: '0.1em',
-          }}
-        >
-          (or press Enter)
-        </div>
+        {!mobile && (
+          <div
+            style={{
+              fontSize: '9px',
+              color: '#4a3828',
+              marginTop: '8px',
+              textAlign: 'center',
+              letterSpacing: '0.1em',
+            }}
+          >
+            (or press Enter)
+          </div>
+        )}
       </div>
     </div>
   )

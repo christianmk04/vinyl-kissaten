@@ -6,16 +6,41 @@ import * as THREE from 'three'
 import { useGameStore } from '@/lib/game/store'
 import { usePlayerMovement } from '@/lib/game/usePlayerMovement'
 import { interactions } from '@/lib/game/interactions'
+import { mobileInput, resetMobileInput } from '@/lib/game/mobileInput'
 
-const JOYSTICK_RADIUS = 55
-const LOOK_SENSITIVITY = 0.003
+const LOOK_SENSITIVITY = 0.0035
+// Distance (px) a touch can move and still be treated as a tap rather than
+// a drag-look. Anything past this threshold becomes a look gesture.
+const TAP_SLOP = 8
+const TAP_MAX_MS = 280
 
+type LookState = {
+  pointerId: number
+  startX: number
+  startY: number
+  lastX: number
+  lastY: number
+  startTime: number
+  moved: boolean
+}
+
+// Mobile pointer/touch handling for the canvas. Listens to pointerdown/move/up
+// on the canvas DOM element ONLY. The joystick + ACT button own their own
+// pointer events at higher z-index, so they swallow their own touches before
+// they reach the canvas. HTML overlays (auth gate, instructions, shelf nav,
+// settings, turntable controls, NowPlaying) likewise sit above the canvas
+// and never receive interference from the controls below.
+//
+// Critically: we do NOT call e.preventDefault() inside touchstart anywhere —
+// doing so cancels the synthesized click events that overlay buttons rely on.
 export default function MobileControls() {
-  const { camera, raycaster, scene } = useThree()
+  const { camera, raycaster, scene, gl } = useThree()
   const view = useGameStore((s) => s.view)
 
-  const joystickRef = useRef({ x: 0, y: 0, touchId: -1 })
-  const lookRef = useRef({ startX: 0, startY: 0, touchId: -1 })
+  // Active "look" pointer (one at a time — we ignore additional simultaneous
+  // canvas touches so the player can't twist the camera by surprise).
+  const lookRef = useRef<LookState | null>(null)
+  // Accumulated look delta consumed once per frame in useFrame.
   const lookDeltaRef = useRef({ x: 0, y: 0 })
   const cameraRotRef = useRef({ yaw: 0, pitch: 0 })
 
@@ -24,106 +49,102 @@ export default function MobileControls() {
   }, [camera])
 
   useEffect(() => {
-    const handleTouchStart = (e: TouchEvent) => {
-      e.preventDefault()
+    const canvas = gl.domElement
+    canvas.style.touchAction = 'none' // we handle touch ourselves
 
-      // Two-finger tap → toggle now-playing
-      if (e.touches.length === 2) {
+    const onPointerDown = (e: PointerEvent) => {
+      // Only respond to touch / pen / first-button mouse on the canvas.
+      // Multi-touch on the canvas: the SECOND simultaneous touch toggles
+      // now-playing (the existing two-finger gesture).
+      if (e.pointerType !== 'touch' && e.pointerType !== 'pen' && e.pointerType !== 'mouse') return
+
+      // Two-finger gesture: a second pointerdown fires while the first is
+      // still capturing. Toggle the now-playing panel and bail.
+      if (lookRef.current && e.pointerType === 'touch') {
         useGameStore.getState().toggleNowPlaying()
         return
       }
 
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i]
-        const isLeft = touch.clientX < window.innerWidth * 0.45
-
-        if (isLeft && joystickRef.current.touchId === -1) {
-          joystickRef.current.touchId = touch.identifier
-          joystickRef.current.x = 0
-          joystickRef.current.y = 0
-          updateJoystickOrigin(touch.clientX, touch.clientY)
-        } else if (!isLeft && lookRef.current.touchId === -1) {
-          lookRef.current = { startX: touch.clientX, startY: touch.clientY, touchId: touch.identifier }
-        }
+      try {
+        canvas.setPointerCapture(e.pointerId)
+      } catch {
+        /* ignore */
+      }
+      lookRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        startTime: performance.now(),
+        moved: false,
       }
     }
 
-    const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault()
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i]
+    const onPointerMove = (e: PointerEvent) => {
+      const look = lookRef.current
+      if (!look || e.pointerId !== look.pointerId) return
 
-        if (touch.identifier === joystickRef.current.touchId) {
-          const originEl = document.getElementById('joystick-origin')
-          if (!originEl) continue
-          const rect = originEl.getBoundingClientRect()
-          const ox = rect.left + rect.width / 2
-          const oy = rect.top + rect.height / 2
-          const dx = touch.clientX - ox
-          const dy = touch.clientY - oy
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          const clamped = Math.min(dist, JOYSTICK_RADIUS)
-          const angle = Math.atan2(dy, dx)
-          joystickRef.current.x = (Math.cos(angle) * clamped) / JOYSTICK_RADIUS
-          joystickRef.current.y = (Math.sin(angle) * clamped) / JOYSTICK_RADIUS
-          const thumb = document.getElementById('joystick-thumb')
-          if (thumb) {
-            thumb.style.transform = `translate(${Math.cos(angle) * clamped}px, ${Math.sin(angle) * clamped}px)`
-          }
-        }
+      const dx = e.clientX - look.lastX
+      const dy = e.clientY - look.lastY
 
-        if (touch.identifier === lookRef.current.touchId) {
-          lookDeltaRef.current.x += (touch.clientX - lookRef.current.startX) * LOOK_SENSITIVITY
-          lookDeltaRef.current.y += (touch.clientY - lookRef.current.startY) * LOOK_SENSITIVITY
-          lookRef.current.startX = touch.clientX
-          lookRef.current.startY = touch.clientY
+      // Once the pointer has moved past the tap threshold, latch into "drag-
+      // look" mode so a flick at the end of a movement doesn't get
+      // misclassified as a tap.
+      if (!look.moved) {
+        const totalDx = e.clientX - look.startX
+        const totalDy = e.clientY - look.startY
+        if (Math.hypot(totalDx, totalDy) > TAP_SLOP) {
+          look.moved = true
         }
       }
-    }
 
-    const handleTouchEnd = (e: TouchEvent) => {
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i]
-        if (touch.identifier === joystickRef.current.touchId) {
-          joystickRef.current = { x: 0, y: 0, touchId: -1 }
-          const thumb = document.getElementById('joystick-thumb')
-          if (thumb) thumb.style.transform = 'translate(0px, 0px)'
-        }
-        if (touch.identifier === lookRef.current.touchId) {
-          lookRef.current = { startX: 0, startY: 0, touchId: -1 }
-        }
+      if (look.moved) {
+        lookDeltaRef.current.x += dx * LOOK_SENSITIVITY
+        lookDeltaRef.current.y += dy * LOOK_SENSITIVITY
       }
+
+      look.lastX = e.clientX
+      look.lastY = e.clientY
     }
 
-    // Single tap on right side → interact (separate from joystick end)
-    const handleTap = (e: TouchEvent) => {
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i]
-        // Only treat as interaction tap if it was a short, non-moved right-side touch
-        if (touch.clientX > window.innerWidth * 0.45) {
-          fireInteraction(touch.clientX, touch.clientY)
-        }
+    const onPointerUp = (e: PointerEvent) => {
+      const look = lookRef.current
+      if (!look || e.pointerId !== look.pointerId) return
+
+      try {
+        canvas.releasePointerCapture(e.pointerId)
+      } catch {
+        /* ignore */
       }
+
+      const elapsed = performance.now() - look.startTime
+      // Tap = short time + minimal movement → fire interaction at tap point
+      if (!look.moved && elapsed < TAP_MAX_MS) {
+        fireInteraction(e.clientX, e.clientY)
+      }
+      lookRef.current = null
     }
 
-    document.addEventListener('touchstart', handleTouchStart, { passive: false })
-    document.addEventListener('touchmove', handleTouchMove, { passive: false })
-    document.addEventListener('touchend', handleTouchEnd)
-    // Don't attach handleTap to touchend for ALL touches — use a dedicated listener
-    // for right-side single tap only, to avoid joystick-release triggering interaction
+    canvas.addEventListener('pointerdown', onPointerDown)
+    canvas.addEventListener('pointermove', onPointerMove)
+    canvas.addEventListener('pointerup', onPointerUp)
+    canvas.addEventListener('pointercancel', onPointerUp)
     return () => {
-      document.removeEventListener('touchstart', handleTouchStart)
-      document.removeEventListener('touchmove', handleTouchMove)
-      document.removeEventListener('touchend', handleTouchEnd)
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      canvas.removeEventListener('pointermove', onPointerMove)
+      canvas.removeEventListener('pointerup', onPointerUp)
+      canvas.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [])
+  }, [gl])
 
-  // Interact button fires from center OR handles turntable
+  // ACT button bridge — fires either a turntable-control cycle (when the
+  // top-down view is active and a record is loaded) or a center-of-screen
+  // raycast interact, mirroring the desktop "E" key behaviour.
   useEffect(() => {
     const onInteract = () => {
       const currentView = useGameStore.getState().view
       if (currentView === 'turntable-top-down') {
-        // Cycle tonearm state
         const s = useGameStore.getState()
         if (!s.loadedAlbum) return
         if (s.tonearmState === 'rest') s.setTonearmState('cued')
@@ -137,22 +158,48 @@ export default function MobileControls() {
     return () => document.removeEventListener('mobile-interact', onInteract)
   }, [])
 
+  // Reset joystick + look state when leaving the page / tab to avoid the
+  // mobile equivalent of a "stuck Shift" key.
+  useEffect(() => {
+    const onBlur = () => {
+      resetMobileInput()
+      lookDeltaRef.current = { x: 0, y: 0 }
+      if (lookRef.current) lookRef.current = null
+    }
+    const onVisibility = () => {
+      if (document.hidden) onBlur()
+    }
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
+
   function fireInteraction(clientX: number, clientY: number) {
-    const nx = (clientX / window.innerWidth) * 2 - 1
-    const ny = -(clientY / window.innerHeight) * 2 + 1
+    const rect = gl.domElement.getBoundingClientRect()
+    const nx = ((clientX - rect.left) / rect.width) * 2 - 1
+    const ny = -((clientY - rect.top) / rect.height) * 2 + 1
     raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera)
     const hits = raycaster.intersectObjects(scene.children, true)
     for (const hit of hits) {
       if (hit.distance > 3.5) break
       let obj: THREE.Object3D | null = hit.object
       while (obj) {
-        if (interactions.has(obj.uuid)) { interactions.fire(obj.uuid); return }
+        if (interactions.has(obj.uuid)) {
+          interactions.fire(obj.uuid)
+          return
+        }
         obj = obj.parent
       }
     }
   }
 
+  // Apply accumulated look delta exactly once per frame so multiple
+  // pointermoves between frames combine cleanly.
   useFrame(() => {
+    if (view !== 'first-person') return
     if (lookDeltaRef.current.x !== 0 || lookDeltaRef.current.y !== 0) {
       cameraRotRef.current.yaw -= lookDeltaRef.current.x
       cameraRotRef.current.pitch = Math.max(
@@ -166,19 +213,14 @@ export default function MobileControls() {
     }
   })
 
+  // Forward joystick deflection into shared movement code. Y is inverted
+  // because pulling the thumb DOWN on screen produces a positive screen-y,
+  // but we want that to mean "walk backwards" in world space.
   usePlayerMovement(() => ({
-    forward: -joystickRef.current.y,
-    right: joystickRef.current.x,
+    forward: -mobileInput.joystick.y,
+    right: mobileInput.joystick.x,
     slow: false,
   }))
 
   return null
-}
-
-function updateJoystickOrigin(x: number, y: number) {
-  const el = document.getElementById('joystick-origin')
-  if (el) {
-    el.style.left = `${x - 65}px`
-    el.style.top = `${y - 65}px`
-  }
 }
