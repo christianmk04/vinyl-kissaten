@@ -13,6 +13,16 @@ export default function SettingsMenu() {
   const toggleFlicker = useGameStore((s) => s.toggleFlicker)
   const cycleSpeed = useGameStore((s) => s.cycleSpeed)
   const setCycleSpeed = useGameStore((s) => s.setCycleSpeed)
+  const view = useGameStore((s) => s.view)
+
+  // The CFG button shares the top-right corner with the mobile DECK / TRACKS
+  // tab bar. There's no room for both on a phone-sized viewport (the tab bar
+  // is 180px wide, CFG is ~70px, screen ~360px), and the visual-effect
+  // toggles aren't meaningful while you're on the deck anyway. Suppress
+  // here so tabs own that corner cleanly during turntable mode on touch.
+  const isTouch =
+    typeof window !== 'undefined' && 'ontouchstart' in window
+  if (isTouch && view === 'turntable-top-down') return null
 
   return (
     <div

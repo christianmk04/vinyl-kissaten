@@ -439,13 +439,14 @@ export default function Cafe() {
         </div>
       )}
 
-      {/* In turntable mode: show hint */}
-      {view === 'turntable-top-down' && (
+      {/* In turntable mode: show hint. Mobile already has discoverable on-
+          screen buttons for everything (DECK / TRACKS tabs, PLAY / STOP, the
+          ✕ close), and the hint kept overlapping that ✕ in portrait, so we
+          only render this for desktop. */}
+      {view === 'turntable-top-down' && !mobile && (
         <div style={{
           position: 'fixed',
-          // On mobile we lift the hint above the bottom-anchored ACT button
-          // and joystick so it doesn't get covered by them.
-          bottom: mobile ? '120px' : '40px',
+          bottom: '40px',
           left: '50%',
           transform: 'translateX(-50%)',
           fontFamily: 'Courier New, monospace',
@@ -461,9 +462,7 @@ export default function Cafe() {
           borderRadius: '2px',
           maxWidth: 'calc(100vw - 32px)',
         }}>
-          {mobile
-            ? 'PLAY/STOP at bottom-right · DECK / TRACKS tabs at top-right · ✕ to leave'
-            : 'ENTER play/stop · F flip record · G pick up · ESC exit'}
+          ENTER play/stop · F flip record · G pick up · ESC exit
         </div>
       )}
 
@@ -616,9 +615,13 @@ function ShelfNavOverlay() {
 function HeldRecordHUD() {
   const heldAlbum = useGameStore((s) => s.heldAlbum)
   const heldSide = useGameStore((s) => s.heldSide)
+  const flipHeldRecord = useGameStore((s) => s.flipHeldRecord)
   const [sideVisible, setSideVisible] = useState(false)
   const [displaySide, setDisplaySide] = useState<'A' | 'B'>('A')
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const isTouch =
+    typeof window !== 'undefined' && 'ontouchstart' in window
 
   // Show side indicator briefly whenever heldSide changes
   useEffect(() => {
@@ -633,7 +636,10 @@ function HeldRecordHUD() {
   if (!heldAlbum) return null
   return (
     <>
-      {/* Main HUD — album name + controls */}
+      {/* Main HUD — album name + controls. The outer div has pointerEvents:
+          none so the album/hint text don't block taps on the world behind
+          them; only the FLIP button on mobile re-enables pointerEvents on
+          itself. */}
       <div
         style={{
           position: 'fixed',
@@ -651,15 +657,53 @@ function HeldRecordHUD() {
           padding: '5px 14px 6px',
           borderRadius: '2px',
           textShadow: '0 1px 4px #000',
-          whiteSpace: 'nowrap',
+          maxWidth: 'calc(100vw - 32px)',
         }}
       >
-        <div style={{ color: '#ffcc77', marginBottom: '3px', fontSize: '11px', fontWeight: 'bold' }}>
+        <div
+          style={{
+            color: '#ffcc77',
+            marginBottom: '3px',
+            fontSize: '11px',
+            fontWeight: 'bold',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
           {heldAlbum.name}
         </div>
-        <div style={{ color: 'rgba(240,221,176,0.75)' }}>
-          Walk to turntable to play · [F] Flip · [ESC] Put back
+        <div style={{ color: 'rgba(240,221,176,0.75)', whiteSpace: isTouch ? 'normal' : 'nowrap' }}>
+          {isTouch
+            ? 'Walk to turntable to play · Tap shelf slot to put away'
+            : 'Walk to turntable to play · [F] Flip · [ESC] Put back'}
         </div>
+        {isTouch && (
+          <button
+            onPointerDown={(e) => {
+              e.preventDefault()
+              flipHeldRecord()
+            }}
+            style={{
+              marginTop: '6px',
+              background: 'rgba(255, 181, 107, 0.18)',
+              border: '1px solid rgba(255, 181, 107, 0.6)',
+              color: '#ffcc77',
+              fontFamily: 'Courier New, monospace',
+              fontSize: '10px',
+              letterSpacing: '0.15em',
+              padding: '4px 14px',
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              WebkitTapHighlightColor: 'transparent',
+              touchAction: 'manipulation',
+            }}
+          >
+            FLIP — SIDE {heldSide === 'A' ? 'B' : 'A'}
+          </button>
+        )}
       </div>
 
       {/* Fading side indicator — appears briefly when side changes */}

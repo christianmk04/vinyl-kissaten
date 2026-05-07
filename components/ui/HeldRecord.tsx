@@ -6,11 +6,26 @@ import * as THREE from 'three'
 import { useGameStore } from '@/lib/game/store'
 import { makeAlbumPlaceholderTexture, ps1Texture } from '@/lib/shaders/ps1'
 
-const SLEEVE_SIZE = 0.50
+// Two presets — desktop has more screen real estate so the held record can
+// be larger and centered nearer the screen middle. On mobile portrait the
+// album dominated the lower half (see user feedback w/ "GROWING UP IS"
+// sleeve filling most of the frame), so we shrink the sleeve and tuck it
+// down-right into the corner so it doesn't block what the player is
+// trying to look at.
+type HeldDims = { size: number; forward: number; right: number; down: number }
+const DESKTOP_SLEEVE: HeldDims = {
+  size: 0.50,
+  forward: 0.52,
+  right: 0.06,
+  down: -0.16,
+}
+const MOBILE_SLEEVE: HeldDims = {
+  size: 0.32,
+  forward: 0.55,
+  right: 0.16,
+  down: -0.20,
+}
 
-const FORWARD_DIST = 0.52
-const RIGHT_OFFSET = 0.06
-const DOWN_OFFSET = -0.16
 const TILT_X = -0.50  // negative = top tilts toward camera (forward tilt)
 
 // Pre-allocated reusables
@@ -25,6 +40,13 @@ export default function HeldRecord() {
   const { camera } = useThree()
   const heldAlbum = useGameStore((s) => s.heldAlbum)
   const heldSide = useGameStore((s) => s.heldSide)
+
+  // Picked once at mount — this component is client-only (parent uses
+  // dynamic({ ssr: false })) so the window check is safe here.
+  const dims = useMemo<HeldDims>(
+    () => (typeof window !== 'undefined' && 'ontouchstart' in window ? MOBILE_SLEEVE : DESKTOP_SLEEVE),
+    [],
+  )
 
   const groupRef = useRef<THREE.Group>(null)
   const prevSideRef = useRef<'A' | 'B'>('A')
@@ -81,7 +103,7 @@ export default function HeldRecord() {
     // obscures what's directly in front of you when pitching the camera).
     const t = Date.now() / 1000
     const floatY = Math.sin(t * 1.4) * 0.004
-    _localOffset.set(RIGHT_OFFSET, DOWN_OFFSET + floatY, -FORWARD_DIST)
+    _localOffset.set(dims.right, dims.down + floatY, -dims.forward)
     _localOffset.applyQuaternion(camera.quaternion)
     groupRef.current.position.copy(camera.position).add(_localOffset)
 
@@ -96,6 +118,10 @@ export default function HeldRecord() {
 
   if (!heldAlbum) return null
 
+  // Hands scale with the sleeve so they still grip the corners on mobile.
+  const handSize = dims.size * 0.20
+  const handDepth = 0.06
+
   return (
     <group ref={groupRef}>
       {/* Front face — art (MeshBasic so warm room lights don't tint album colors) */}
@@ -103,7 +129,7 @@ export default function HeldRecord() {
         position={[0, 0, 0.002]}
         ref={(mesh) => { if (mesh) mesh.raycast = () => null }}
       >
-        <boxGeometry args={[SLEEVE_SIZE, SLEEVE_SIZE, 0.002]} />
+        <boxGeometry args={[dims.size, dims.size, 0.002]} />
         {artTex
           ? <meshBasicMaterial map={artTex} />
           : <meshBasicMaterial color="#3a2818" />}
@@ -115,7 +141,7 @@ export default function HeldRecord() {
         rotation={[0, Math.PI, 0]}
         ref={(mesh) => { if (mesh) mesh.raycast = () => null }}
       >
-        <boxGeometry args={[SLEEVE_SIZE, SLEEVE_SIZE, 0.002]} />
+        <boxGeometry args={[dims.size, dims.size, 0.002]} />
         {artTex
           ? <meshBasicMaterial map={artTex} />
           : <meshBasicMaterial color="#3a2818" />}
@@ -123,19 +149,19 @@ export default function HeldRecord() {
 
       {/* Left hand */}
       <mesh
-        position={[-SLEEVE_SIZE * 0.35, -SLEEVE_SIZE * 0.46, 0.015]}
+        position={[-dims.size * 0.35, -dims.size * 0.46, 0.015]}
         ref={(mesh) => { if (mesh) mesh.raycast = () => null }}
       >
-        <boxGeometry args={[0.1, 0.07, 0.06]} />
+        <boxGeometry args={[handSize * 2, handSize * 1.4, handDepth]} />
         <meshLambertMaterial color="#b08060" flatShading />
       </mesh>
 
       {/* Right hand */}
       <mesh
-        position={[SLEEVE_SIZE * 0.35, -SLEEVE_SIZE * 0.46, 0.015]}
+        position={[dims.size * 0.35, -dims.size * 0.46, 0.015]}
         ref={(mesh) => { if (mesh) mesh.raycast = () => null }}
       >
-        <boxGeometry args={[0.1, 0.07, 0.06]} />
+        <boxGeometry args={[handSize * 2, handSize * 1.4, handDepth]} />
         <meshLambertMaterial color="#b08060" flatShading />
       </mesh>
     </group>

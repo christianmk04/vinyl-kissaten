@@ -120,6 +120,12 @@ export default function MobileJoystick() {
         <button
           onPointerDown={(e) => {
             e.preventDefault()
+            // Touch users treat ✕ as "leave vinyl mode entirely" — they
+            // expect the music to stop and the now-playing panel to go away
+            // when they back out. Rest the tonearm before leaving so the
+            // useTonearmPlayback effect tears down the audio (it keys off
+            // tonearmState !== 'playing' to call preview.stop() / SDK pause).
+            useGameStore.getState().setTonearmState('rest')
             setView('first-person')
           }}
           aria-label="Leave the turntable"

@@ -85,10 +85,14 @@ export default function NowPlaying() {
 
   const isTouch =
     typeof window !== 'undefined' && 'ontouchstart' in window
-  // On mobile turntable view this panel only shows when the user has tapped
-  // the TRACKS tab — DECK tab keeps the controls panel on screen instead.
-  // Desktop renders both panels at the same time and ignores the tab.
+  // Mobile show-rules:
+  //   • cafe view: never (it's clutter on a phone — duplicate of info on the
+  //     deck and competes with the joystick / ACT button for screen space).
+  //   • turntable + DECK tab: hidden (controls panel takes the same slot).
+  //   • turntable + TRACKS tab: shown at top-right under the tab bar.
+  // Desktop ignores both rules and always renders.
   const isMobileTurntable = isTouch && view === 'turntable-top-down'
+  if (isTouch && !isMobileTurntable) return null
   if (isMobileTurntable && mobileTurntableTab !== 'tracks') return null
 
   const track = playbackState?.track_window?.current_track
