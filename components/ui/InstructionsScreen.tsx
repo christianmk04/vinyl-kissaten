@@ -109,7 +109,9 @@ export default function InstructionsScreen({ onDismiss }: InstructionsScreenProp
               <Row k="Joystick (left)" v="Walk around" />
               <Row k="Drag screen" v="Look around" />
               <Row k="Tap on a thing" v="Interact (pick up, set down, open turntable)" />
-              <Row k="ACT button" v="Same as a tap, aimed at the screen center" />
+              <Row k="ACT / PLAY (right)" v="Tap to interact / start & stop the record" />
+              <Row k="DECK / TRACKS tabs" v="Switch between deck controls and the tracklist" />
+              <Row k="✕ (top-left)" v="Leave the turntable view" />
               <Row k="Two-finger tap" v="Toggle now-playing panel" />
               <Row k="▲ / ▼ near shelf" v="Browse to other shelf pages" />
             </>
@@ -142,8 +144,13 @@ export default function InstructionsScreen({ onDismiss }: InstructionsScreenProp
               </Bullet>
               <Bullet>
                 <strong style={{ color: '#e8d5a8' }}>Tap the turntable</strong> to open the
-                top-down view, then tap <strong style={{ color: '#e8d5a8' }}>ACT</strong> to
-                cue → play → rest.
+                top-down view, then tap <strong style={{ color: '#e8d5a8' }}>PLAY</strong> to
+                start the record (tap again to stop).
+              </Bullet>
+              <Bullet>
+                Use the <strong style={{ color: '#e8d5a8' }}>DECK / TRACKS</strong> tabs at the
+                top-right to switch between deck controls and the tracklist. Tap{' '}
+                <strong style={{ color: '#e8d5a8' }}>✕</strong> at top-left to leave the deck.
               </Bullet>
               <Bullet>
                 To put a record back, look at its empty slot on the shelf and tap.

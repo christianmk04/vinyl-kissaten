@@ -34,12 +34,10 @@ export default function MobileJoystick() {
   const tonearmState = useGameStore((s) => s.tonearmState)
 
   // ACT button label: in the cafe it's a generic "ACT" tap. At the deck it's
-  // the primary play/pause/cue cycle, so we surface that intent directly.
+  // a binary PLAY/STOP — mobile skips the cued half-step (see MobileControls).
   let actLabel = 'ACT'
   if (isAtTurntable) {
-    if (tonearmState === 'playing' || isPlaying) actLabel = 'STOP'
-    else if (tonearmState === 'cued') actLabel = 'PLAY'
-    else actLabel = 'PLAY'
+    actLabel = (tonearmState === 'playing' || isPlaying) ? 'STOP' : 'PLAY'
   }
 
   useEffect(() => {

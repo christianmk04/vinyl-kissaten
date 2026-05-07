@@ -147,9 +147,13 @@ export default function MobileControls() {
       if (currentView === 'turntable-top-down') {
         const s = useGameStore.getState()
         if (!s.loadedAlbum) return
-        if (s.tonearmState === 'rest') s.setTonearmState('cued')
-        else if (s.tonearmState === 'cued') s.setTonearmState('playing')
-        else s.setTonearmState('rest')
+        // Mobile shortcut: a single tap goes from rest → playing directly,
+        // skipping the cosmetic 'cued' half-step. Touch users found the
+        // cue-then-play double-tap unintuitive (no needle to lift here, the
+        // PLAY label promises playback). The desktop tonearm meshes still
+        // expose the full 3-step cycle for users who want it.
+        if (s.tonearmState === 'playing') s.setTonearmState('rest')
+        else s.setTonearmState('playing')
       } else {
         fireInteraction(window.innerWidth / 2, window.innerHeight / 2)
       }

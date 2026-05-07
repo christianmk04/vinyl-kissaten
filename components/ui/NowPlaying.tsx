@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import type React from 'react'
 import { useGameStore } from '@/lib/game/store'
 import { formatSideLabel } from '@/lib/spotify/sides'
 import { getTimeLabel } from '@/lib/game/dayNight'
@@ -77,18 +78,18 @@ export default function NowPlaying() {
   const playbackMode = useGameStore((s) => s.playbackMode)
 
   const view = useGameStore((s) => s.view)
+  const mobileTurntableTab = useGameStore((s) => s.mobileTurntableTab)
   const live = useLiveScrub(isPlaying, playbackMode)
 
   if (!showNowPlaying || !loadedAlbum) return null
 
-  // On phones the turntable view is already crowded with the deck, the
-  // top-right TurntableControls panel, the bottom-right PLAY button, and the
-  // hint text. The now-playing panel duplicates info you can read off the
-  // labels and would be the third overlay fighting for the same screen, so
-  // we hide it specifically in that combination.
   const isTouch =
     typeof window !== 'undefined' && 'ontouchstart' in window
-  if (isTouch && view === 'turntable-top-down') return null
+  // On mobile turntable view this panel only shows when the user has tapped
+  // the TRACKS tab — DECK tab keeps the controls panel on screen instead.
+  // Desktop renders both panels at the same time and ignores the tab.
+  const isMobileTurntable = isTouch && view === 'turntable-top-down'
+  if (isMobileTurntable && mobileTurntableTab !== 'tracks') return null
 
   const track = playbackState?.track_window?.current_track
   // Prefer the live-polled position/duration; fall back to whatever the
@@ -138,16 +139,25 @@ export default function NowPlaying() {
     }).catch(() => null)
   }
 
-  // On touch devices, lift the panel above the joystick (which sits at
-  // bottom: 30 with height 130 → top edge at ~160px). Also clamp the width
-  // so the panel can't crash into the PLAY button on narrow screens.
+  // Three layouts to consider:
+  //  - Desktop (any view): bottom-left, 260px wide. Original spec.
+  //  - Mobile cafe view: bottom-left but lifted above the joystick (which
+  //    sits at bottom:30 height:130 → top edge ~160px), clamped width so it
+  //    can't crash into the PLAY button on narrow screens.
+  //  - Mobile turntable view (TRACKS tab): top-right under the tab bar,
+  //    matching the deck-controls panel anchor so flipping tabs feels like
+  //    the same surface swapping content.
+  const panelStyle: React.CSSProperties = isMobileTurntable
+    ? { top: '60px', right: '16px', width: '220px', maxHeight: 'calc(100vh - 76px)', overflowY: 'auto' }
+    : isTouch
+      ? { bottom: '180px', left: '12px', width: 'min(220px, calc(100vw - 140px))' }
+      : { bottom: '24px', left: '24px', width: '260px' }
+
   return (
     <div
       style={{
         position: 'fixed',
-        bottom: isTouch ? '180px' : '24px',
-        left: isTouch ? '12px' : '24px',
-        width: isTouch ? 'min(220px, calc(100vw - 140px))' : '260px',
+        ...panelStyle,
         background: 'rgba(20, 12, 6, 0.92)',
         border: '1px solid #3a2418',
         padding: '12px',

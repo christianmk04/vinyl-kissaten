@@ -40,6 +40,7 @@ import InteractionPrompt from '../ui/InteractionPrompt'
 import LoadingScreen from '../ui/LoadingScreen'
 import InstructionsScreen from '../ui/InstructionsScreen'
 import MobileJoystick from '../ui/MobileJoystick'
+import MobileTurntableTabs from '../ui/MobileTurntableTabs'
 import TurntableControls from '../ui/TurntableControls'
 import SettingsMenu from '../ui/SettingsMenu'
 
@@ -385,6 +386,7 @@ export default function Cafe() {
       <TurntableControls />
       <SettingsMenu />
       {mobile && <MobileJoystick />}
+      {mobile && <MobileTurntableTabs />}
 
       {/* Crosshair — plus shape when idle, amber ring when hovering interactable */}
       {view !== 'turntable-top-down' && (
@@ -460,7 +462,7 @@ export default function Cafe() {
           maxWidth: 'calc(100vw - 32px)',
         }}>
           {mobile
-            ? 'ACT cue/play/rest · tap turntable controls to flip · tap album to lift'
+            ? 'PLAY/STOP at bottom-right · DECK / TRACKS tabs at top-right · ✕ to leave'
             : 'ENTER play/stop · F flip record · G pick up · ESC exit'}
         </div>
       )}

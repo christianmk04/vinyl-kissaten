@@ -49,6 +49,7 @@ export default function TurntableControls() {
   const playbackMode = useGameStore((s) => s.playbackMode)
   const setPlaybackMode = useGameStore((s) => s.setPlaybackMode)
   const previewError = useGameStore((s) => s.previewError)
+  const mobileTurntableTab = useGameStore((s) => s.mobileTurntableTab)
 
   const [fxStatus, setFxStatus] = useState<'idle' | 'rate' | 'full' | 'blocked'>('idle')
   useEffect(() => {
@@ -104,11 +105,17 @@ export default function TurntableControls() {
   const isTouch =
     typeof window !== 'undefined' && 'ontouchstart' in window
 
+  // On mobile, this panel lives behind the DECK tab and yields the screen to
+  // NowPlaying when the user is on the TRACKS tab. Desktop ignores the tab
+  // state entirely and always renders.
+  if (isTouch && mobileTurntableTab !== 'deck') return null
+
   return (
     <div style={{
       position: 'fixed',
+      // Mobile sits below the tab bar (top:16, height ~32). Desktop unchanged.
       ...(isTouch
-        ? { top: '16px', right: '16px', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' as const }
+        ? { top: '60px', right: '16px', maxHeight: 'calc(100vh - 76px)', overflowY: 'auto' as const }
         : { bottom: '16px', right: '16px' }),
       background: 'rgba(8, 6, 4, 0.92)',
       border: '1px solid #2a1810',

@@ -123,6 +123,13 @@ interface GameStore {
   showNowPlaying: boolean
   toggleNowPlaying: () => void
 
+  // Mobile turntable tab — which panel is currently visible on touch devices
+  // when the player is at the deck. Desktop ignores this and shows both
+  // panels at once. Defaults to 'deck' so a freshly-entered turntable view
+  // still shows the controls users expect.
+  mobileTurntableTab: 'deck' | 'tracks'
+  setMobileTurntableTab: (t: 'deck' | 'tracks') => void
+
   showCRTOverlay: boolean
   toggleCRTOverlay: () => void
 
@@ -249,6 +256,9 @@ export const useGameStore = create<GameStore>((set) => ({
   // ── UI ────────────────────────────────────────────────────────────────────
   showNowPlaying: true,
   toggleNowPlaying: () => set((s) => ({ showNowPlaying: !s.showNowPlaying })),
+
+  mobileTurntableTab: 'deck',
+  setMobileTurntableTab: (t) => set({ mobileTurntableTab: t }),
 
   showCRTOverlay: false,
   toggleCRTOverlay: () => set((s) => ({ showCRTOverlay: !s.showCRTOverlay })),
