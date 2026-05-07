@@ -4,9 +4,18 @@ import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
-// Analogue clock with real-system-time hands. Mounted on the back wall above
-// the shelves (high enough to clear the shelf top frame). Hour and minute
-// hands update every frame from `Date()`.
+// Analogue clock with real-system-time hands. Mounted on the front wall
+// (z=+5) above the bar counter — the previous spot was behind the shelf
+// back panel, so the clock was hidden from the player except briefly
+// during shelf-page transitions.
+//
+// Orientation note: the clock is built in its natural pose with its face
+// normal along +Z, then the whole group is rotated 180° around Y so the
+// face points -Z (into the room) for the front-wall mount. The rim is a
+// thin cylinder rotated 90° around X so its axis is perpendicular to the
+// wall — the previous code left the cylinder upright (axis along Y), which
+// made the clock look like a horizontal disc seen edge-on from beneath
+// rather than a flat wall clock.
 
 export default function WallClock() {
   const hourRef = useRef<THREE.Group>(null)
@@ -17,7 +26,9 @@ export default function WallClock() {
     const sec = now.getSeconds() + now.getMilliseconds() / 1000
     const min = now.getMinutes() + sec / 60
     const hr = (now.getHours() % 12) + min / 60
-    // 0 rad = pointing up (+Y). Rotate clockwise = negative Z rotation.
+    // Hand rotation in local-Z. Combined with the parent group's Y=PI
+    // rotation, this maps to a clockwise sweep from the viewer's POV
+    // (player looks in +Z direction at the clock on the front wall).
     if (minuteRef.current) {
       minuteRef.current.rotation.z = -(min / 60) * Math.PI * 2
     }
@@ -27,19 +38,30 @@ export default function WallClock() {
   })
 
   return (
-    <group position={[0, 2.55, -4.93]}>
-      {/* Outer rim — dark wood */}
-      <mesh>
+    // Mounted above the bar's wall art on the front wall (front face z=4.94).
+    // The wall already carries an equipment rack centered at y=1.85 (top
+    // y≈2.25) and two framed albums at y=2.40 (top y≈2.61). The clock sits
+    // in the band between the album tops and the ceiling beam at y=2.93,
+    // centered on the bar at x=-0.5. We shrink it (scale=0.55, ≈30 cm
+    // diameter) so it fits cleanly in that 32 cm vertical gap — it reads as
+    // a deliberate "feature clock" at the top of the bar wall instead of
+    // overlapping the rack below.
+    <group position={[-0.5, 2.78, 4.92]} rotation={[0, Math.PI, 0]} scale={0.55}>
+      {/* Outer rim — flat disc lying against the wall. Cylinder rotated so
+          its axis is perpendicular to the wall (along Z), giving thin
+          circular front/back faces in the XY plane. */}
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.28, 0.28, 0.04, 24]} />
         <meshLambertMaterial color="#1a0e06" flatShading />
       </mesh>
-      {/* Face — cream */}
-      <mesh position={[0, 0, 0.021]} rotation={[Math.PI / 2, 0, 0]}>
+
+      {/* Face — cream, sits 1mm in front of the rim front face */}
+      <mesh position={[0, 0, 0.021]}>
         <circleGeometry args={[0.25, 24]} />
         <meshBasicMaterial color="#e8d8b0" />
       </mesh>
 
-      {/* Hour ticks — 12 marks around the face */}
+      {/* Hour ticks — 12 marks around the face, longer marks every 3 hours */}
       {Array.from({ length: 12 }, (_, i) => {
         const angle = (i / 12) * Math.PI * 2
         const r = 0.22

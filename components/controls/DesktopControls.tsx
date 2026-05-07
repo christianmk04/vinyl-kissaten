@@ -111,11 +111,29 @@ export default function DesktopControls() {
       if (e.key in k) k[e.key] = false
     }
 
+    // Clear all held keys when the window loses focus or the tab is hidden.
+    // Without this, modifier keys (especially Shift) get stuck in the "down"
+    // state when the user Cmd/Alt-Tabs away mid-press, because the browser
+    // delivers the keydown but the matching keyup never fires once focus is
+    // gone. Result: returning to the tab looks like permanent slow-walk until
+    // you tap Shift again to force a fresh keyup.
+    const clearAll = () => {
+      const k = keys.current as Record<string, boolean>
+      for (const key of Object.keys(k)) k[key] = false
+    }
+    const onVisibilityChange = () => {
+      if (document.hidden) clearAll()
+    }
+
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
+    window.addEventListener('blur', clearAll)
+    document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', clearAll)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [view])
 

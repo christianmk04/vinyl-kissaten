@@ -406,15 +406,130 @@ export default function Cafe() {
           padding: '4px 12px',
           borderRadius: '2px',
         }}>
-          DRAG to look · WASD to move · point crosshair at object · E to interact · [ ] skip track
+          DRAG to look · WASD to move · E to interact · [ ] skip track · PgUp/PgDn browse shelves
         </div>
       )}
 
       {/* Interaction prompt */}
       <InteractionPrompt label={hoverLabel} />
 
+      {/* Shelf pagination indicator — crisp HTML overlay (the in-scene plate
+          version was unreadable after the PS1 nearest-neighbor downsample). */}
+      {phase === 'ready' && view === 'first-person' && (
+        <ShelfNavOverlay />
+      )}
+
       {/* Held record HUD hints */}
       <HeldRecordHUD />
+    </div>
+  )
+}
+
+// Top-center HUD with a crisp page indicator and clickable prev/next nav
+// buttons. Replaces the in-scene 3D arrow buttons entirely — those were
+// inherently positional and dropped out of view at certain camera angles
+// regardless of where on the shelf unit we placed them. HTML buttons are
+// always visible, always reachable, and always render at native resolution.
+//
+// The actual page-change logic lives in VinylLibrary; this component just
+// invokes the requester callbacks it published to the store.
+function ShelfNavOverlay() {
+  const shelfPage = useGameStore((s) => s.shelfPage)
+  const shelfPageCount = useGameStore((s) => s.shelfPageCount)
+  const requestPrev = useGameStore((s) => s.requestPrevShelfPage)
+  const requestNext = useGameStore((s) => s.requestNextShelfPage)
+  // Proximity gating — VinylLibrary publishes this on threshold crossings so
+  // the overlay only appears when the player has actually walked over to the
+  // shelf, rather than nagging them from across the room.
+  const nearShelf = useGameStore((s) => s.nearShelf)
+  // The held-record HUD also occupies top-center; if an album is in hand the
+  // active interaction is "walk to turntable", not "browse more shelves", so
+  // we suppress this overlay to avoid the two stacking on top of each other.
+  // PgUp/PgDn keyboard shortcuts still work for power users mid-hold.
+  const heldAlbum = useGameStore((s) => s.heldAlbum)
+  if (shelfPageCount <= 1 || !nearShelf || heldAlbum) return null
+
+  const buttonStyle: React.CSSProperties = {
+    background: 'rgba(40,20,10,0.85)',
+    border: '1px solid rgba(255,200,120,0.45)',
+    color: '#ffcc77',
+    fontFamily: 'Courier New, monospace',
+    fontSize: '20px',
+    fontWeight: 'bold',
+    width: '40px',
+    height: '40px',
+    cursor: 'pointer',
+    pointerEvents: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    borderRadius: '2px',
+    transition: 'background 120ms ease, transform 120ms ease',
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        fontFamily: 'Courier New, monospace',
+        color: '#ffe6b0',
+        letterSpacing: '0.12em',
+        textAlign: 'center',
+        zIndex: 40,
+        textShadow: '0 1px 5px #000, 0 0 16px #000',
+        background: 'rgba(0,0,0,0.6)',
+        padding: '10px 16px',
+        borderRadius: '3px',
+        border: '1px solid rgba(255,200,120,0.3)',
+        pointerEvents: 'none',
+      }}
+    >
+      <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>
+        SHELF · PAGE {shelfPage + 1} / {shelfPageCount}
+      </div>
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
+        <button
+          aria-label="Previous shelf page"
+          onClick={(e) => {
+            e.stopPropagation()
+            requestPrev?.()
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={buttonStyle}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(80,40,20,0.95)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(40,20,10,0.85)'
+          }}
+        >
+          ▲
+        </button>
+        <button
+          aria-label="Next shelf page"
+          onClick={(e) => {
+            e.stopPropagation()
+            requestNext?.()
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={buttonStyle}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(80,40,20,0.95)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(40,20,10,0.85)'
+          }}
+        >
+          ▼
+        </button>
+      </div>
+      <div style={{ fontSize: '9px', marginTop: '8px', opacity: 0.7 }}>
+        or use PgUp / PgDn
+      </div>
     </div>
   )
 }

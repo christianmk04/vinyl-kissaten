@@ -56,30 +56,12 @@ export default function BarCounter() {
           <boxGeometry args={[3.4, 1.0, 0.5]} />
         </mesh>
 
-        {/* Espresso machine */}
-        <group position={[0.8, 1.13, 0]}>
-          <mesh material={darkMat}>
-            <boxGeometry args={[0.45, 0.38, 0.35]} />
-          </mesh>
-          <mesh position={[0, -0.18, 0.12]}>
-            <cylinderGeometry args={[0.06, 0.06, 0.1, 6]} />
-            <meshLambertMaterial color="#333333" flatShading />
-          </mesh>
-          <mesh position={[0, -0.23, 0.12]}>
-            <cylinderGeometry args={[0.055, 0.055, 0.04, 6]} />
-            <meshLambertMaterial color="#222222" flatShading />
-          </mesh>
-          <mesh position={[0.25, -0.05, 0.08]} rotation={[0, 0, -0.3]}>
-            <cylinderGeometry args={[0.008, 0.008, 0.22, 5]} />
-            <meshLambertMaterial color="#555555" flatShading />
-          </mesh>
-          <points ref={steamRef} position={[0.28, 0.06, 0.08]}>
-            <bufferGeometry>
-              <bufferAttribute attach="attributes-position" args={[steamPositions, 3]} />
-            </bufferGeometry>
-            <pointsMaterial color="#aabbcc" size={0.015} transparent opacity={0.3} sizeAttenuation />
-          </points>
-        </group>
+        {/* Espresso machine — sits ON the counter top (group origin is the
+            machine center; box height 0.40 means y must be counter top
+            (1.09) + 0.20 = 1.29 so the bottom flushes with the counter).
+            Faces -z (into the room) so the player sees the group head and
+            portafilter from the seating side. */}
+        <EspressoMachine position={[0.8, 1.29, 0]} steamRef={steamRef} steamPositions={steamPositions} />
 
         {/* Coffee cups */}
         {[[-0.8, 0], [0, 0], [-1.2, 0]].map(([x, z], i) => (
@@ -142,6 +124,182 @@ export default function BarCounter() {
       <CafeTable position={[-1.8, 0, 1.8]} />
       <CafeTable position={[0.5, 0, 2.2]} />
     </>
+  )
+}
+
+// ── Espresso machine ──────────────────────────────────────────────────────
+// Designed to read clearly even under the PS1 pipeline at counter distance:
+//   • Polished steel body with brighter front faceplate so it pops against
+//     the dark counter trim
+//   • Cup-warmer top tray + a row of inverted demitasse cups
+//   • A single round group head with portafilter handle protruding toward
+//     the seating side (-z), the most recognizable espresso silhouette
+//   • Steam wand on the right with the existing animated steam particles
+//   • Round pressure gauge dial on the front faceplate
+//   • Drip tray beneath the group head
+// Local axes: the machine is centered at the group origin. -z faces the
+// room (where the player stands), +z faces the barista behind the counter.
+function EspressoMachine({
+  position,
+  steamRef,
+  steamPositions,
+}: {
+  position: [number, number, number]
+  steamRef: React.RefObject<THREE.Points | null>
+  steamPositions: Float32Array
+}) {
+  return (
+    <group position={position}>
+      {/* === MAIN BODY (polished steel) === */}
+      <mesh position={[0, 0, 0]}>
+        <boxGeometry args={[0.50, 0.40, 0.36]} />
+        <meshLambertMaterial color="#a8a4a0" flatShading />
+      </mesh>
+      {/* Faceplate (slightly brighter, sits 1cm in front of body) */}
+      <mesh position={[0, 0.02, -0.181]}>
+        <planeGeometry args={[0.46, 0.32]} />
+        <meshBasicMaterial color="#d8d4cc" />
+      </mesh>
+      {/* Thin black trim around faceplate to outline it */}
+      <mesh position={[0, 0.02, -0.180]}>
+        <planeGeometry args={[0.48, 0.34]} />
+        <meshBasicMaterial color="#1a1410" />
+      </mesh>
+
+      {/* === CUP WARMER TOP TRAY (raised lip + inverted demitasse cups) === */}
+      <mesh position={[0, 0.215, 0]}>
+        <boxGeometry args={[0.46, 0.03, 0.32]} />
+        <meshLambertMaterial color="#3a3430" flatShading />
+      </mesh>
+      {/* Stack of two rows of cups, white porcelain */}
+      {[-0.15, -0.05, 0.05, 0.15].map((cx) =>
+        [-0.06, 0.06].map((cz) => (
+          <mesh key={`${cx}-${cz}`} position={[cx, 0.245, cz]}>
+            <cylinderGeometry args={[0.025, 0.022, 0.025, 8]} />
+            <meshLambertMaterial color="#f0e8d8" flatShading />
+          </mesh>
+        )),
+      )}
+
+      {/* === GROUP HEAD (front, facing -z) === */}
+      {/* Chrome ring */}
+      <mesh position={[-0.10, -0.06, -0.181]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.055, 0.055, 0.04, 16]} />
+        <meshLambertMaterial color="#e8e4dc" flatShading />
+      </mesh>
+      {/* Inner dark recess */}
+      <mesh position={[-0.10, -0.06, -0.20]}>
+        <circleGeometry args={[0.038, 16]} />
+        <meshBasicMaterial color="#0a0604" />
+      </mesh>
+      {/* Portafilter handle — horizontal, sticking forward into the room */}
+      <mesh position={[-0.10, -0.07, -0.26]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.014, 0.014, 0.13, 8]} />
+        <meshLambertMaterial color="#3a2008" flatShading />
+      </mesh>
+      {/* Portafilter "head" — small disc where the basket attaches */}
+      <mesh position={[-0.10, -0.07, -0.215]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.034, 0.034, 0.025, 12]} />
+        <meshLambertMaterial color="#cccac4" flatShading />
+      </mesh>
+      {/* Wooden grip cap on the end of the portafilter */}
+      <mesh position={[-0.10, -0.07, -0.33]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.022, 0.018, 0.04, 8]} />
+        <meshLambertMaterial color="#5a2a10" flatShading />
+      </mesh>
+
+      {/* === PRESSURE GAUGE (round dial, front-right of faceplate) === */}
+      <mesh position={[0.12, 0.04, -0.182]}>
+        <ringGeometry args={[0.038, 0.046, 18]} />
+        <meshBasicMaterial color="#1a1410" />
+      </mesh>
+      <mesh position={[0.12, 0.04, -0.183]}>
+        <circleGeometry args={[0.038, 18]} />
+        <meshBasicMaterial color="#f0eadc" />
+      </mesh>
+      {/* Gauge needle */}
+      <mesh position={[0.12, 0.045, -0.184]} rotation={[0, 0, -0.6]}>
+        <planeGeometry args={[0.004, 0.030]} />
+        <meshBasicMaterial color="#aa1a1a" />
+      </mesh>
+      {/* Tick marks at the cardinal positions */}
+      {[
+        { a: -1.2, c: '#1a1410' },
+        { a: -0.6, c: '#1a1410' },
+        { a: 0, c: '#1a1410' },
+        { a: 0.6, c: '#1a1410' },
+        { a: 1.2, c: '#aa1a1a' },
+      ].map((tk, i) => (
+        <mesh
+          key={i}
+          position={[
+            0.12 + Math.sin(tk.a) * 0.030,
+            0.04 + Math.cos(tk.a) * 0.030,
+            -0.184,
+          ]}
+          rotation={[0, 0, tk.a]}
+        >
+          <planeGeometry args={[0.003, 0.006]} />
+          <meshBasicMaterial color={tk.c} />
+        </mesh>
+      ))}
+
+      {/* === BREW BUTTONS (small row beneath the gauge) === */}
+      {[-0.04, 0.04, 0.12].map((bx, i) => (
+        <mesh key={i} position={[bx + 0.04, -0.06, -0.184]}>
+          <circleGeometry args={[0.014, 12]} />
+          <meshBasicMaterial color={i === 1 ? '#5aff80' : '#444038'} />
+        </mesh>
+      ))}
+
+      {/* === STEAM WAND === */}
+      {/* Pivot block on the right side of the body */}
+      <mesh position={[0.225, 0.04, -0.10]}>
+        <boxGeometry args={[0.06, 0.06, 0.06]} />
+        <meshLambertMaterial color="#3a3430" flatShading />
+      </mesh>
+      {/* Wand pipe — angles outward and downward */}
+      <mesh position={[0.30, -0.04, -0.10]} rotation={[0, 0, Math.PI / 2 + 0.5]}>
+        <cylinderGeometry args={[0.009, 0.009, 0.22, 8]} />
+        <meshLambertMaterial color="#d8d4cc" flatShading />
+      </mesh>
+      {/* Wand tip */}
+      <mesh position={[0.36, -0.13, -0.10]}>
+        <cylinderGeometry args={[0.012, 0.008, 0.025, 8]} />
+        <meshLambertMaterial color="#b8b4ac" flatShading />
+      </mesh>
+
+      {/* === DRIP TRAY (slotted grate beneath the group head) === */}
+      <mesh position={[-0.10, -0.18, -0.16]}>
+        <boxGeometry args={[0.18, 0.02, 0.06]} />
+        <meshLambertMaterial color="#2a2420" flatShading />
+      </mesh>
+      {/* Grate slots — three thin dark lines suggesting drainage */}
+      {[-0.05, 0, 0.05].map((sx, i) => (
+        <mesh key={i} position={[-0.10 + sx, -0.169, -0.16]}>
+          <planeGeometry args={[0.004, 0.05]} />
+          <meshBasicMaterial color="#0a0604" />
+        </mesh>
+      ))}
+
+      {/* === BRAND BADGE (top center of faceplate) === */}
+      <mesh position={[0, 0.13, -0.184]}>
+        <planeGeometry args={[0.16, 0.025]} />
+        <meshBasicMaterial color="#5a3010" />
+      </mesh>
+      <mesh position={[0, 0.13, -0.185]}>
+        <planeGeometry args={[0.18, 0.04]} />
+        <meshBasicMaterial color="#d8a060" />
+      </mesh>
+
+      {/* === STEAM PARTICLES (rising from the wand tip) === */}
+      <points ref={steamRef} position={[0.36, -0.10, -0.10]}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[steamPositions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial color="#e8eef4" size={0.018} transparent opacity={0.45} sizeAttenuation />
+      </points>
+    </group>
   )
 }
 

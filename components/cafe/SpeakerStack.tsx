@@ -1,146 +1,202 @@
 'use client'
 
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { applyPS1Material, makeWoodTexture } from '@/lib/shaders/ps1'
 
 // Two tall speakers FLANKING the bar counter (not behind it — the counter
 // would block them) plus a wall-mounted equipment rack above the counter.
 // Sells the room as a music venue and fills the previously-bare front wall.
 
-// Hi-fi floor speaker. Reads as a speaker from across the room because:
-//   - cones are MUCH lighter than the cabinet (high contrast silhouette)
-//   - each driver has a brass/metal rim that catches the warm light
-//   - the woofer cone has visible concentric ridges suggesting paper cone
-//   - bright dust caps in the centers act as focal "eyes" the brain reads
-//     instantly as speakers
+// One driver (tweeter or woofer). Built from concentric rings and discs in
+// `MeshBasicMaterial` so they stay at full brightness regardless of the
+// cafe's dim lighting — the previous Lambert version dimmed cone colors
+// into the same value as the cabinet, which is why the speakers read as
+// flat wooden blocks. Each layer is z-separated by 5–10 mm to comfortably
+// resolve under the PS1 nearest-neighbor pipeline at viewing distance.
+// Z-stack note: the cabinet uses PS1 vertex snap (snapStrength=160 → step
+// ~6.25 mm), so its front face wanders ±3 mm frame-to-frame. Everything on
+// the baffle has to sit at least 10 mm in front of the cabinet front face
+// (z=0.21) or it'll get punched through in patches as the snap shifts.
+// Driver layers themselves use plain MeshBasicMaterial with no snap, so 2 mm
+// between layers is plenty.
+function SpeakerDriver({
+  y,
+  radius,
+  coneColor,
+  dustCapColor = '#f4e4b8',
+  ridges = false,
+}: {
+  y: number
+  radius: number
+  coneColor: string
+  dustCapColor?: string
+  ridges?: boolean
+}) {
+  const R = radius
+  return (
+    <>
+      {/* Brass mounting ring (outer band, ~15% of radius wide) */}
+      <mesh position={[0, y, 0.228]}>
+        <ringGeometry args={[R * 0.85, R, 28]} />
+        <meshBasicMaterial color="#c89858" />
+      </mesh>
+      {/* Bolt heads on the brass ring — four small dark dots at the cardinal
+          points to sell "this is a real driver bolted to the baffle" */}
+      {[0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map((a, i) => (
+        <mesh
+          key={i}
+          position={[Math.cos(a) * R * 0.925, y + Math.sin(a) * R * 0.925, 0.230]}
+        >
+          <circleGeometry args={[R * 0.04, 8]} />
+          <meshBasicMaterial color="#1a1208" />
+        </mesh>
+      ))}
+      {/* Black rubber surround */}
+      <mesh position={[0, y, 0.232]}>
+        <ringGeometry args={[R * 0.70, R * 0.85, 28]} />
+        <meshBasicMaterial color="#0a0604" />
+      </mesh>
+      {/* Cone — bright paper that reads from across the room */}
+      <mesh position={[0, y, 0.236]}>
+        <circleGeometry args={[R * 0.70, 28]} />
+        <meshBasicMaterial color={coneColor} />
+      </mesh>
+      {/* Concentric ridges on the cone (woofer-style detail) */}
+      {ridges && (
+        <>
+          <mesh position={[0, y, 0.239]}>
+            <ringGeometry args={[R * 0.55, R * 0.59, 28]} />
+            <meshBasicMaterial color="#3a1f0a" />
+          </mesh>
+          <mesh position={[0, y, 0.239]}>
+            <ringGeometry args={[R * 0.40, R * 0.44, 28]} />
+            <meshBasicMaterial color="#3a1f0a" />
+          </mesh>
+        </>
+      )}
+      {/* Dark ring just outside the dust cap — the cone's inner shadow */}
+      <mesh position={[0, y, 0.242]}>
+        <ringGeometry args={[R * 0.30, R * 0.34, 24]} />
+        <meshBasicMaterial color="#2a1408" />
+      </mesh>
+      {/* Dust cap — bright "eye" the brain reads as a speaker focal point */}
+      <mesh position={[0, y, 0.245]}>
+        <circleGeometry args={[R * 0.30, 18]} />
+        <meshBasicMaterial color={dustCapColor} />
+      </mesh>
+      {/* Specular highlight pip on the dust cap (sells the convex form) */}
+      <mesh position={[-R * 0.10, y + R * 0.10, 0.248]}>
+        <circleGeometry args={[R * 0.09, 12]} />
+        <meshBasicMaterial color="#fff5d8" />
+      </mesh>
+    </>
+  )
+}
+
+// Hi-fi floor speaker. Bookshelf-style two-way (tweeter + woofer) with
+// brass driver rings, bright cones, and a real wood-grain cabinet so the
+// box doesn't read as a uniform dark block. The vertical dimension is
+// chunky (1.55m) — these are floor-standing — but the front-baffle detail
+// is what makes it read as a speaker and not furniture.
 function Speaker({ position }: { position: [number, number, number] }) {
+  // Wood texture for the cabinet — gives the side panels a visible grain
+  // even in dim lighting (vs. the previous flat dark color which looked
+  // like a painted box).
+  const woodTex = useMemo(() => {
+    const t = makeWoodTexture()
+    t.repeat.set(0.6, 1.4)
+    return t
+  }, [])
+  const cabinetMat = useMemo(() => {
+    const m = new THREE.MeshLambertMaterial({
+      map: woodTex,
+      color: '#3a2010',
+      flatShading: true,
+    })
+    applyPS1Material(m, { snapStrength: 160 })
+    return m
+  }, [woodTex])
+
   return (
     <group position={position}>
-      {/* Cabinet body — dark walnut */}
-      <mesh>
+      {/* Cabinet body — wood grain walnut */}
+      <mesh material={cabinetMat}>
         <boxGeometry args={[0.58, 1.55, 0.42]} />
-        <meshLambertMaterial color="#2a1608" flatShading />
       </mesh>
-      {/* Front baffle — slightly recessed black panel */}
-      <mesh position={[0, 0, 0.215]}>
+
+      {/* Front baffle — sits 15mm in front of the cabinet front face (z=0.21).
+          That gap is bigger than the PS1 vertex-snap step (~6.25mm) so the
+          cabinet's snapped vertices can never punch through the baffle. */}
+      <mesh position={[0, 0, 0.225]}>
         <planeGeometry args={[0.52, 1.5]} />
-        <meshLambertMaterial color="#1a0c06" flatShading />
+        <meshBasicMaterial color="#1a100a" />
       </mesh>
-      {/* Inner baffle highlight (top edge) — sells the recessed-baffle look */}
-      <mesh position={[0, 0.745, 0.216]}>
-        <planeGeometry args={[0.52, 0.012]} />
-        <meshBasicMaterial color="#5a3820" />
+      {/* Baffle frame highlight — top */}
+      <mesh position={[0, 0.745, 0.226]}>
+        <planeGeometry args={[0.52, 0.014]} />
+        <meshBasicMaterial color="#7a5028" />
       </mesh>
-
-      {/* ── TWEETER (top) ─────────────────────────────────────────── */}
-      {/* Brass mounting ring */}
-      <mesh position={[0, 0.55, 0.220]}>
-        <ringGeometry args={[0.075, 0.105, 16]} />
-        <meshLambertMaterial color="#a07840" flatShading />
-      </mesh>
-      {/* Black surround */}
-      <mesh position={[0, 0.55, 0.222]}>
-        <circleGeometry args={[0.078, 16]} />
-        <meshLambertMaterial color="#1a1208" flatShading />
-      </mesh>
-      {/* Silk dome */}
-      <mesh position={[0, 0.55, 0.225]}>
-        <circleGeometry args={[0.048, 16]} />
-        <meshLambertMaterial color="#7a5a3a" flatShading />
-      </mesh>
-      {/* Highlight pip — sells the convex dome */}
-      <mesh position={[-0.012, 0.564, 0.228]}>
-        <circleGeometry args={[0.012, 8]} />
-        <meshBasicMaterial color="#d8b070" />
+      {/* Baffle frame highlight — bottom */}
+      <mesh position={[0, -0.745, 0.226]}>
+        <planeGeometry args={[0.52, 0.014]} />
+        <meshBasicMaterial color="#7a5028" />
       </mesh>
 
-      {/* ── MID DRIVER ────────────────────────────────────────────── */}
-      <mesh position={[0, 0.18, 0.220]}>
-        <ringGeometry args={[0.155, 0.185, 18]} />
-        <meshLambertMaterial color="#a07840" flatShading />
-      </mesh>
-      {/* Outer cone (paper) */}
-      <mesh position={[0, 0.18, 0.222]}>
-        <circleGeometry args={[0.158, 18]} />
-        <meshLambertMaterial color="#9a6c42" flatShading />
-      </mesh>
-      {/* Inner cone shadow ring */}
-      <mesh position={[0, 0.18, 0.225]}>
-        <circleGeometry args={[0.108, 18]} />
-        <meshLambertMaterial color="#3a2010" flatShading />
-      </mesh>
-      {/* Dust cap — bright bullet center */}
-      <mesh position={[0, 0.18, 0.228]}>
-        <circleGeometry args={[0.045, 12]} />
-        <meshLambertMaterial color="#8a6438" flatShading />
-      </mesh>
-      <mesh position={[-0.012, 0.192, 0.230]}>
-        <circleGeometry args={[0.014, 8]} />
-        <meshBasicMaterial color="#d8a060" />
-      </mesh>
+      {/* ── TWEETER (top, small dome) ─────────────────────────────── */}
+      <SpeakerDriver
+        y={0.50}
+        radius={0.10}
+        coneColor="#b89060"
+        dustCapColor="#e8d090"
+      />
 
-      {/* ── WOOFER (large bottom driver) ──────────────────────────── */}
-      {/* Brass mounting ring */}
-      <mesh position={[0, -0.32, 0.220]}>
-        <ringGeometry args={[0.215, 0.255, 24]} />
-        <meshLambertMaterial color="#a07840" flatShading />
+      {/* ── WOOFER (bottom, large with ridges) ────────────────────── */}
+      <SpeakerDriver
+        y={-0.20}
+        radius={0.22}
+        coneColor="#d8b078"
+        dustCapColor="#f4dca8"
+        ridges
+      />
+
+      {/* ── BASS REFLEX PORT (round hole below the woofer) ──────── */}
+      <mesh position={[0, -0.55, 0.227]}>
+        <ringGeometry args={[0.034, 0.042, 18]} />
+        <meshBasicMaterial color="#5a3a18" />
       </mesh>
-      {/* Outer rubber surround (dark) */}
-      <mesh position={[0, -0.32, 0.222]}>
-        <circleGeometry args={[0.22, 24]} />
-        <meshLambertMaterial color="#0a0604" flatShading />
-      </mesh>
-      {/* Outer cone — light paper */}
-      <mesh position={[0, -0.32, 0.224]}>
-        <circleGeometry args={[0.195, 24]} />
-        <meshLambertMaterial color="#a07248" flatShading />
-      </mesh>
-      {/* Concentric ridges — paper cone texture */}
-      <mesh position={[0, -0.32, 0.226]}>
-        <ringGeometry args={[0.158, 0.165, 24]} />
-        <meshLambertMaterial color="#5a3818" flatShading />
-      </mesh>
-      <mesh position={[0, -0.32, 0.226]}>
-        <ringGeometry args={[0.118, 0.125, 24]} />
-        <meshLambertMaterial color="#5a3818" flatShading />
-      </mesh>
-      {/* Inner cone shadow */}
-      <mesh position={[0, -0.32, 0.227]}>
-        <circleGeometry args={[0.082, 18]} />
-        <meshLambertMaterial color="#3a2010" flatShading />
-      </mesh>
-      {/* Dust cap — bullet */}
-      <mesh position={[0, -0.32, 0.230]}>
-        <circleGeometry args={[0.06, 12]} />
-        <meshLambertMaterial color="#8a6438" flatShading />
-      </mesh>
-      <mesh position={[-0.018, -0.302, 0.232]}>
-        <circleGeometry args={[0.018, 8]} />
-        <meshBasicMaterial color="#d8a060" />
+      <mesh position={[0, -0.55, 0.228]}>
+        <circleGeometry args={[0.034, 18]} />
+        <meshBasicMaterial color="#000000" />
       </mesh>
 
       {/* ── BADGE & LED ──────────────────────────────────────────── */}
       {/* Logo plate (brass) */}
-      <mesh position={[0, -0.65, 0.221]}>
-        <planeGeometry args={[0.16, 0.06]} />
+      <mesh position={[-0.12, -0.68, 0.227]}>
+        <planeGeometry args={[0.14, 0.05]} />
         <meshBasicMaterial color="#d8a060" />
       </mesh>
-      {/* Logo text dashes */}
-      <mesh position={[0, -0.65, 0.222]}>
-        <planeGeometry args={[0.10, 0.012]} />
-        <meshBasicMaterial color="#3a2010" />
+      <mesh position={[-0.12, -0.68, 0.228]}>
+        <planeGeometry args={[0.10, 0.010]} />
+        <meshBasicMaterial color="#2a1808" />
       </mesh>
-      {/* Power LED */}
-      <mesh position={[0.22, -0.65, 0.222]}>
-        <planeGeometry args={[0.018, 0.018]} />
-        <meshBasicMaterial color="#5aff70" />
+      {/* Power LED — bright green so it reads as "powered on" */}
+      <mesh position={[0.20, -0.68, 0.227]}>
+        <ringGeometry args={[0.012, 0.018, 12]} />
+        <meshBasicMaterial color="#5a3a18" />
+      </mesh>
+      <mesh position={[0.20, -0.68, 0.228]}>
+        <circleGeometry args={[0.012, 12]} />
+        <meshBasicMaterial color="#7aff80" />
       </mesh>
 
-      {/* Top cap chamfer — small lighter strip on top sells the cabinet form */}
-      <mesh position={[0, 0.776, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      {/* Top cap chamfer — small lighter strip on top sells the cabinet form.
+          Sits 10mm above the cabinet's top face (y=0.775) so the cabinet's
+          PS1-snapped top face can't pop above it from certain angles. */}
+      <mesh position={[0, 0.785, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[0.58, 0.42]} />
-        <meshLambertMaterial color="#3a2010" flatShading />
+        <meshLambertMaterial color="#4a2a14" flatShading />
       </mesh>
     </group>
   )
@@ -323,11 +379,15 @@ function FramedAlbum({ position, color }: { position: [number, number, number]; 
 export default function SpeakerStack() {
   return (
     <>
-      {/* Floor speakers flanking the counter — visible from any angle */}
-      <group position={[-2.85, 0.78, 4.72]}>
+      {/* Floor speakers flanking the counter. Rotated 180° around Y so the
+          drivers face -Z (into the room). The Speaker component is built
+          with its baffle on the +Z side; without this rotation the
+          drivers end up on the wall-facing side and the player only sees
+          the speaker's blank back panel. */}
+      <group position={[-2.85, 0.78, 4.72]} rotation={[0, Math.PI, 0]}>
         <Speaker position={[0, 0, 0]} />
       </group>
-      <group position={[1.85, 0.78, 4.72]}>
+      <group position={[1.85, 0.78, 4.72]} rotation={[0, Math.PI, 0]}>
         <Speaker position={[0, 0, 0]} />
       </group>
 

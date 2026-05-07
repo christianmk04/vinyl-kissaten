@@ -35,6 +35,13 @@ export function usePlayerMovement(getInput: () => MovementInput) {
   const OBSTACLES = [
     // Bar counter at group [-0.5, 0, 4.25], body [3.4, 1.0, 0.5]
     { minX: -2.45, maxX: 1.45, minZ: 3.75, maxZ: 5.0 },
+    // Bar stools — three round stools at world (-1.7, 3.6), (-0.5, 3.6),
+    // (0.7, 3.6); seat radius 0.18m, inflated by ~0.22m for player width so
+    // the player's body can't clip through a stool while still leaving a
+    // walkable squeeze between adjacent stools (gaps stay ~0.4m wide)
+    { minX: -2.10, maxX: -1.30, minZ: 3.20, maxZ: 4.00 },
+    { minX: -0.90, maxX: -0.10, minZ: 3.20, maxZ: 4.00 },
+    { minX: 0.30, maxX: 1.10, minZ: 3.20, maxZ: 4.00 },
     // Turntable table at [3, 0, 0], estimated ~1.2m wide × 0.6m deep
     { minX: 2.05, maxX: 3.95, minZ: -0.6, maxZ: 0.6 },
     // Cafe table at [-2.5, 0, -0.8] with chairs

@@ -31,6 +31,30 @@ interface GameStore {
   setAlbums: (albums: SpotifyAlbum[]) => void
   setShelvesByCategory: (map: Record<string, SpotifyAlbum[]>) => void
 
+  // ── Shelf pagination (read by HUD overlay, written by VinylLibrary) ───────
+  // VinylLibrary publishes its current page so we can render a crisp HTML
+  // page indicator + clickable nav buttons outside the 3D canvas. Baking
+  // these into the scene as plates is too small/fuzzy after the PS1
+  // pipeline, and any 3D button is inherently positional and falls out of
+  // view at some camera angle.
+  shelfPage: number          // 0-indexed
+  shelfPageCount: number
+  setShelfPage: (page: number, count: number) => void
+  // VinylLibrary registers these on mount so the HTML overlay buttons (and
+  // anything else outside the R3F tree) can trigger a page flip without
+  // needing a direct ref to the component.
+  requestPrevShelfPage: (() => void) | null
+  requestNextShelfPage: (() => void) | null
+  setShelfPageRequester: (
+    prev: (() => void) | null,
+    next: (() => void) | null,
+  ) => void
+  // Whether the player is currently close enough to the shelf for the nav
+  // overlay to be relevant. Updated by VinylLibrary on threshold crossings
+  // (with hysteresis) so the overlay doesn't poll the camera every frame.
+  nearShelf: boolean
+  setNearShelf: (v: boolean) => void
+
   // ── Library load progress (for loading screen) ────────────────────────────
   libraryLoadState: 'pending' | 'fetching' | 'processing' | 'done' | 'error'
   libraryProgress: { loaded: number; total: number }
@@ -144,6 +168,16 @@ export const useGameStore = create<GameStore>((set) => ({
   shelvesByCategory: {},
   setAlbums: (albums) => set({ albums }),
   setShelvesByCategory: (map) => set({ shelvesByCategory: map }),
+
+  shelfPage: 0,
+  shelfPageCount: 0,
+  setShelfPage: (page, count) => set({ shelfPage: page, shelfPageCount: count }),
+  requestPrevShelfPage: null,
+  requestNextShelfPage: null,
+  setShelfPageRequester: (prev, next) =>
+    set({ requestPrevShelfPage: prev, requestNextShelfPage: next }),
+  nearShelf: false,
+  setNearShelf: (v) => set({ nearShelf: v }),
 
   libraryLoadState: 'pending',
   libraryProgress: { loaded: 0, total: 0 },

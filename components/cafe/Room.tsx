@@ -200,19 +200,12 @@ function Plant({
       <mesh position={[0, 0.88 * s, 0]} material={leafMat}>
         <boxGeometry args={[0.52 * s, 0.48 * s, 0.52 * s]} />
       </mesh>
-      {/* Secondary leaf clusters */}
-      <mesh position={[0.18 * s, 1.0 * s, 0.1 * s]} material={leafLight}>
-        <boxGeometry args={[0.34 * s, 0.36 * s, 0.34 * s]} />
-      </mesh>
-      <mesh position={[-0.15 * s, 1.05 * s, -0.1 * s]} material={leafLight}>
-        <boxGeometry args={[0.3 * s, 0.32 * s, 0.3 * s]} />
-      </mesh>
-      {/* Drooping leaves: flat planes sticking out */}
-      <mesh position={[0.3 * s, 0.75 * s, 0]} rotation={[0, 0, -0.5]} material={leafMat}>
-        <boxGeometry args={[0.28 * s, 0.06, 0.08 * s]} />
-      </mesh>
-      <mesh position={[-0.28 * s, 0.72 * s, 0.1 * s]} rotation={[0, 0.3, 0.45]} material={leafMat}>
-        <boxGeometry args={[0.24 * s, 0.06, 0.08 * s]} />
+      {/* Smaller "crown" cluster on top — kept entirely inside the main
+          foliage's xz footprint so it adds vertical bulk without producing
+          the awkward flat protrusions the previous offset clusters and
+          drooping-leaf slabs created */}
+      <mesh position={[0, 1.18 * s, 0]} material={leafLight}>
+        <boxGeometry args={[0.38 * s, 0.22 * s, 0.38 * s]} />
       </mesh>
     </group>
   )
