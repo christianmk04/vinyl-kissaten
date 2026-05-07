@@ -3,15 +3,16 @@
 import { Suspense, useEffect, useState, useRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { useGameStore } from '@/lib/game/store'
-import { initAudio } from '@/lib/audio/howlerSetup'
+import { initAudio, setHowlerMuted } from '@/lib/audio/howlerSetup'
 import {
   fetchSavedAlbums,
   categorizeAlbums,
   downsampleArtwork,
 } from '@/lib/spotify/library'
-import { initPlayer } from '@/lib/spotify/player'
+import { initPlayer, getPlayer } from '@/lib/spotify/player'
 import type { SpotifyAlbum, SpotifyPlaybackState } from '@/lib/types'
 import { startVinylEffects } from '@/lib/audio/vinylEffects'
+import * as preview from '@/lib/audio/previewPlayer'
 
 // Scene components
 import PS1Pipeline from './PS1Pipeline'
@@ -269,6 +270,73 @@ export default function Cafe() {
       setAudioStarted(true)
     }
   }
+
+  // Pause every audio source when the tab/window becomes hidden, and resume
+  // music if it was playing when the user comes back. Without this, a
+  // backgrounded tab keeps Spotify SDK / preview <audio> playing into the
+  // void, and the cafe ambience continues even though the user is gone.
+  //
+  // Three sources to handle:
+  //   1. Howler-managed sounds (rain, chatter, SFX) → global mute toggle
+  //   2. Preview player <audio> + Web Audio chain → preview.pause/resume
+  //   3. Spotify Web Playback SDK → player.pause()/resume()
+  //
+  // We only AUTO-RESUME music — ambient unmutes itself as soon as Howler is
+  // un-muted, but if the user paused the music themselves before tabbing
+  // away, we don't want to undo that decision when they come back.
+  useEffect(() => {
+    // Guard so the listener can't double-pause (which would overwrite
+    // wasMusicPlaying with the post-pause `false`) when both visibilitychange
+    // and blur fire for the same backgrounding event.
+    let isPaused = false
+    let wasMusicPlaying = false
+
+    const pauseAll = () => {
+      if (isPaused) return
+      isPaused = true
+      const s = useGameStore.getState()
+      wasMusicPlaying = s.isPlaying
+      setHowlerMuted(true)
+      // Always pause both audio paths regardless of mode — cheaper than
+      // checking which one is active and harmless if one path isn't in use.
+      try { preview.pause() } catch { /* no-op */ }
+      const p = getPlayer()
+      if (p) p.pause().catch(() => null)
+    }
+
+    const resumeAll = () => {
+      if (!isPaused) return
+      isPaused = false
+      setHowlerMuted(false)
+      // Only auto-resume music if it was playing when we backgrounded — if
+      // the user had stopped it themselves, leave it stopped.
+      if (!wasMusicPlaying) return
+      const s = useGameStore.getState()
+      if (s.playbackMode === 'preview') {
+        try { preview.resume() } catch { /* no-op */ }
+      } else {
+        const p = getPlayer()
+        if (p) p.resume().catch(() => null)
+      }
+    }
+
+    const onVisibilityChange = () => {
+      if (document.hidden) pauseAll()
+      else resumeAll()
+    }
+
+    // We listen to both visibilitychange (the right event for "tab is in
+    // background") and window blur/focus (catches screen-lock and minimize
+    // on browsers that don't fire visibilitychange in those cases).
+    window.addEventListener('blur', pauseAll)
+    window.addEventListener('focus', resumeAll)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.removeEventListener('blur', pauseAll)
+      window.removeEventListener('focus', resumeAll)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [])
 
   return (
     <div

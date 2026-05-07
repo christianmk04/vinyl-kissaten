@@ -28,6 +28,7 @@ export default function MobileJoystick() {
   // the joystick is just visual clutter overlapping the now-playing panel.
   // The ACT button stays so the user has a one-tap PLAY/PAUSE.
   const view = useGameStore((s) => s.view)
+  const setView = useGameStore((s) => s.setView)
   const isAtTurntable = view === 'turntable-top-down'
   const isPlaying = useGameStore((s) => s.isPlaying)
   const tonearmState = useGameStore((s) => s.tonearmState)
@@ -111,6 +112,49 @@ export default function MobileJoystick() {
 
   return (
     <>
+      {/* Back button — only shown at the turntable on mobile. Desktop has the
+          ESC keybinding plus the in-panel "STAND BACK [ESC]" button; touch
+          users have no keyboard, and the in-panel button is at the bottom of
+          a now-scrollable controls column so it's easy to miss. A dedicated
+          top-left close button is the standard mobile pattern for "leave
+          this view". */}
+      {isAtTurntable && (
+        <button
+          onPointerDown={(e) => {
+            e.preventDefault()
+            setView('first-person')
+          }}
+          aria-label="Leave the turntable"
+          style={{
+            position: 'fixed',
+            top: '12px',
+            left: '12px',
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            background: 'rgba(20, 12, 6, 0.85)',
+            border: '1px solid rgba(232, 213, 168, 0.4)',
+            color: '#e8d5a8',
+            fontFamily: 'Courier New, monospace',
+            fontSize: '20px',
+            lineHeight: 1,
+            cursor: 'pointer',
+            zIndex: 70,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            WebkitTapHighlightColor: 'transparent',
+            touchAction: 'none',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.6)',
+          }}
+        >
+          ✕
+        </button>
+      )}
+
       {/* Joystick origin — interactive (captures its own pointer events).
           Hidden at the turntable since walking is meaningless there. */}
       <div

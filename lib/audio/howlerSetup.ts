@@ -85,3 +85,16 @@ export function unduckChat() {
 export function setMasterVolume(v: number) {
   Howler.volume(v)
 }
+
+// Globally mute every Howl instance. Used by the visibility / blur handler in
+// Cafe.tsx so the cafe goes silent the instant the user switches tabs or
+// sends the browser to the background, and unmutes on return. Howler.mute is
+// preferable to per-Howl pause/play here because:
+//   1. Looping ambience (rain, chatter) keeps its phase, so no audible
+//      restart when the tab comes back.
+//   2. Any one-shot SFX scheduled while hidden (e.g. the espresso timer
+//      firing on a throttled setTimeout) silently no-ops instead of
+//      producing a delayed bark when the user returns.
+export function setHowlerMuted(muted: boolean) {
+  Howler.mute(muted)
+}
