@@ -16,8 +16,13 @@ body {
   background: #1a1410;
   color: #e8d5a8;
   font-family: 'Courier New', Courier, monospace;
-  cursor: none;
 }
+
+/* The R3F canvas owns its own cursor (set programmatically by
+   DesktopControls — grab when free-look, grabbing while dragging, default
+   in the turntable top-down view). HTML overlays (instructions, sign-in,
+   shelf nav, settings) keep the OS cursor so users can see what they're
+   clicking. */
 
 /* pixelated image rendering everywhere */
 img,
