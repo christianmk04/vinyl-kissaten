@@ -1,13 +1,10 @@
 'use client'
 
-const SCOPES = [
-  'streaming',
-  'user-read-email',
-  'user-read-private',
-  'user-library-read',
-  'user-read-playback-state',
-  'user-modify-playback-state',
-].join(' ')
+// We only need user-library-read now — playback runs through 30-sec
+// previews via Web Audio, so the Web Playback SDK and the playback-state
+// / streaming scopes that powered it are no longer requested. This also
+// lets users sign in with a free Spotify account (no Premium needed).
+const SCOPES = ['user-library-read'].join(' ')
 
 function generateRandomString(length: number): string {
   const chars =

@@ -132,7 +132,7 @@ As of April 2025, Spotify no longer accepts `localhost` in redirect URIs. You **
 The `pnpm dev` command is pre-configured to bind to `127.0.0.1` via `--hostname 127.0.0.1`.
 
 ### iOS Safari Autoplay Quirk
-The Web Playback SDK requires a user gesture before it can initialize audio context on iOS. The app handles this by waiting for a tap/click on the canvas before calling `initPlayer()`. If music doesn't play on iOS, tap the canvas first.
+Mobile browsers require a user gesture before they can start audio. The app waits for a tap/click anywhere on the page before initializing the audio engine. If music doesn't play on iOS, tap once first.
 
 ---
 

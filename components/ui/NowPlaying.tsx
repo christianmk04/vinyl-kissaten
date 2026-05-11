@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type React from 'react'
 import { useGameStore } from '@/lib/game/store'
 import { formatSideLabel } from '@/lib/spotify/sides'
 import { getTimeLabel } from '@/lib/game/dayNight'
-import { getPlayer } from '@/lib/spotify/player'
 import * as preview from '@/lib/audio/previewPlayer'
 
 const SCRUB_TICK_MS = 250
@@ -15,43 +14,18 @@ function formatMs(ms: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
-// Hook: ticks 4× per second to refresh the scrub bar for whichever playback
-// path is active. Spotify SDK's player_state_changed only fires on track-level
-// state changes (play/pause/skip) — its `position` field is a snapshot, not
-// a live counter — so we poll getCurrentState() to refresh it. Preview mode
-// reads currentTime directly off the <audio> element.
-function useLiveScrub(isPlaying: boolean, mode: 'spotify' | 'preview'): { pos: number; dur: number } {
+// Hook: ticks 4× per second to refresh the scrub bar by reading currentTime
+// directly off the preview <audio> element.
+function useLiveScrub(): { pos: number; dur: number } {
   const [tick, setTick] = useState({ pos: 0, dur: 0 })
-  const isPlayingRef = useRef(isPlaying)
-  isPlayingRef.current = isPlaying
   useEffect(() => {
     let stopped = false
     let timer: ReturnType<typeof setTimeout> | null = null
     const loop = () => {
       if (stopped) return
-      if (mode === 'preview') {
-        const p = preview.getCurrentTimeMs()
-        const d = preview.getDurationMs()
-        setTick((prev) => (prev.pos === p && prev.dur === d ? prev : { pos: p, dur: d }))
-      } else {
-        const player = getPlayer()
-        if (player) {
-          player
-            .getCurrentState()
-            .then((state) => {
-              if (stopped) return
-              if (!state) {
-                setTick((prev) => (prev.pos === 0 && prev.dur === 0 ? prev : { pos: 0, dur: 0 }))
-                return
-              }
-              setTick({ pos: state.position, dur: state.duration })
-              // Keep the store's playbackState fresh too, so other consumers
-              // (end-of-side detection in Cafe.tsx) see live progress.
-              useGameStore.getState().setPlaybackState(state)
-            })
-            .catch(() => null)
-        }
-      }
+      const p = preview.getCurrentTimeMs()
+      const d = preview.getDurationMs()
+      setTick((prev) => (prev.pos === p && prev.dur === d ? prev : { pos: p, dur: d }))
       timer = setTimeout(loop, SCRUB_TICK_MS)
     }
     loop()
@@ -59,7 +33,7 @@ function useLiveScrub(isPlaying: boolean, mode: 'spotify' | 'preview'): { pos: n
       stopped = true
       if (timer) clearTimeout(timer)
     }
-  }, [mode])
+  }, [])
   return tick
 }
 
@@ -73,13 +47,10 @@ export default function NowPlaying() {
   const isPlaying = useGameStore((s) => s.isPlaying)
   const timeOfDay = useGameStore((s) => s.timeOfDay)
   const endOfSideReached = useGameStore((s) => s.endOfSideReached)
-  const spotifyToken = useGameStore((s) => s.spotifyToken)
-  const spotifyDeviceId = useGameStore((s) => s.spotifyDeviceId)
-  const playbackMode = useGameStore((s) => s.playbackMode)
 
   const view = useGameStore((s) => s.view)
   const mobileTurntableTab = useGameStore((s) => s.mobileTurntableTab)
-  const live = useLiveScrub(isPlaying, playbackMode)
+  const live = useLiveScrub()
 
   if (!showNowPlaying || !loadedAlbum) return null
 
@@ -96,8 +67,8 @@ export default function NowPlaying() {
   if (isMobileTurntable && mobileTurntableTab !== 'tracks') return null
 
   const track = playbackState?.track_window?.current_track
-  // Prefer the live-polled position/duration; fall back to whatever the
-  // Spotify SDK last told us if polling hasn't started yet.
+  // Prefer the live-polled position/duration; fall back to whatever was
+  // last synthesized into playbackState if polling hasn't started yet.
   const pos = live.pos > 0 || live.dur > 0 ? live.pos : (playbackState?.position ?? 0)
   const dur = live.dur > 0 ? live.dur : (playbackState?.duration ?? 1)
   const progress = dur > 0 ? Math.min(1, pos / dur) : 0
@@ -107,40 +78,15 @@ export default function NowPlaying() {
   const timeLabel = getTimeLabel(timeOfDay)
 
   function handleSkipNext() {
-    if (playbackMode === 'preview') {
-      preview.nextTrack()
-    } else {
-      const p = getPlayer()
-      if (p) p.nextTrack().catch(() => null)
-    }
+    preview.nextTrack()
   }
 
   function handleSkipPrev() {
-    if (playbackMode === 'preview') {
-      preview.previousTrack()
-    } else {
-      const p = getPlayer()
-      if (p) p.previousTrack().catch(() => null)
-    }
+    preview.previousTrack()
   }
 
   function handlePlayTrack(index: number) {
-    if (playbackMode === 'preview') {
-      preview.playTrackAt(index)
-      return
-    }
-    if (!spotifyToken || !spotifyDeviceId || sideTracks.length === 0) return
-    fetch(`https://api.spotify.com/v1/me/player/play?device_id=${spotifyDeviceId}`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${spotifyToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        uris: sideTracks.map((t) => t.uri),
-        offset: { position: index },
-      }),
-    }).catch(() => null)
+    preview.playTrackAt(index)
   }
 
   // Three layouts to consider:

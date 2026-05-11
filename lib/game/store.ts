@@ -7,22 +7,18 @@ import type {
   TonearmState,
   PlatterRpm,
   SpotifyPlaybackState,
-  PlaybackMode,
 } from '@/lib/types'
 
 interface GameStore {
   // ── Auth ──────────────────────────────────────────────────────────────────
+  // We use the Spotify token for the Web API only (fetching the user's saved
+  // albums). All playback runs through the Web-Audio preview path, so we no
+  // longer need device ids, premium gating, or the Web Playback SDK.
   spotifyToken: string | null
-  spotifyDeviceId: string | null
-  isPremium: boolean | null
   // Guest mode = visitor browsing the host's pre-baked library snapshot
   // (public/library.json) with 30s previews, no Spotify account needed.
-  // When true, the app skips the Web Playback SDK and reads tracks from the
-  // snapshot directly. Forced in tandem with playbackMode='preview'.
   guestMode: boolean
   setSpotifyToken: (token: string | null) => void
-  setSpotifyDeviceId: (id: string | null) => void
-  setIsPremium: (v: boolean) => void
   setGuestMode: (v: boolean) => void
 
   // ── Library ───────────────────────────────────────────────────────────────
@@ -97,15 +93,13 @@ interface GameStore {
   autoFlip: boolean
   setAutoFlip: (v: boolean) => void
 
-  // 'spotify' = full tracks via Web Playback SDK (no FX — DRM-locked stream)
-  // 'preview' = 30-second mp3 previews via Web Audio (full FX chain works)
-  playbackMode: PlaybackMode
-  setPlaybackMode: (m: PlaybackMode) => void
-
   previewError: string | null
   setPreviewError: (msg: string | null) => void
 
-  // ── Playback state (from SDK) ─────────────────────────────────────────────
+  // ── Playback state ────────────────────────────────────────────────────────
+  // Unified shape (originally an SDK type, now a synthesized object from
+  // previewPlayer's onTrackChange) so the rest of the UI is agnostic to
+  // where playback came from. NowPlaying / end-of-side detection read this.
   playbackState: SpotifyPlaybackState | null
   setPlaybackState: (s: SpotifyPlaybackState | null) => void
 
@@ -162,12 +156,8 @@ interface GameStore {
 export const useGameStore = create<GameStore>((set) => ({
   // ── Auth ──────────────────────────────────────────────────────────────────
   spotifyToken: null,
-  spotifyDeviceId: null,
-  isPremium: null,
   guestMode: false,
   setSpotifyToken: (token) => set({ spotifyToken: token }),
-  setSpotifyDeviceId: (id) => set({ spotifyDeviceId: id }),
-  setIsPremium: (v) => set({ isPremium: v }),
   setGuestMode: (v) => set({ guestMode: v }),
 
   // ── Library ───────────────────────────────────────────────────────────────
@@ -234,9 +224,6 @@ export const useGameStore = create<GameStore>((set) => ({
 
   autoFlip: false,
   setAutoFlip: (v) => set({ autoFlip: v }),
-
-  playbackMode: 'spotify',
-  setPlaybackMode: (m) => set({ playbackMode: m }),
 
   previewError: null,
   setPreviewError: (msg) => set({ previewError: msg }),

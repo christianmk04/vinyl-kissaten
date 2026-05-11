@@ -6,7 +6,6 @@ import * as THREE from 'three'
 import { useGameStore } from '@/lib/game/store'
 import { usePlayerMovement } from '@/lib/game/usePlayerMovement'
 import { interactions } from '@/lib/game/interactions'
-import { getPlayer } from '@/lib/spotify/player'
 import * as preview from '@/lib/audio/previewPlayer'
 
 const LOOK_SENSITIVITY = 0.005
@@ -88,23 +87,9 @@ export default function DesktopControls() {
           s.setHeldAlbum(null)
         }
       }
-      // Track navigation — branches on playback mode
-      if (e.key === ']') {
-        if (useGameStore.getState().playbackMode === 'preview') {
-          preview.nextTrack()
-        } else {
-          const p = getPlayer()
-          if (p) p.nextTrack().catch(() => null)
-        }
-      }
-      if (e.key === '[') {
-        if (useGameStore.getState().playbackMode === 'preview') {
-          preview.previousTrack()
-        } else {
-          const p = getPlayer()
-          if (p) p.previousTrack().catch(() => null)
-        }
-      }
+      // Track navigation
+      if (e.key === ']') preview.nextTrack()
+      if (e.key === '[') preview.previousTrack()
     }
     const up = (e: KeyboardEvent) => {
       const k = keys.current as Record<string, boolean>

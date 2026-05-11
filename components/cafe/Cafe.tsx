@@ -9,10 +9,10 @@ import {
   categorizeAlbums,
   downsampleArtwork,
 } from '@/lib/spotify/library'
-import { initPlayer, getPlayer } from '@/lib/spotify/player'
-import type { SpotifyAlbum, SpotifyPlaybackState } from '@/lib/types'
+import type { SpotifyAlbum } from '@/lib/types'
 import { startVinylEffects } from '@/lib/audio/vinylEffects'
 import * as preview from '@/lib/audio/previewPlayer'
+
 
 // Scene components
 import PS1Pipeline from './PS1Pipeline'
@@ -140,7 +140,6 @@ function useLibraryLoader() {
   const guestMode = useGameStore((s) => s.guestMode)
   const setAlbums = useGameStore((s) => s.setAlbums)
   const setShelvesByCategory = useGameStore((s) => s.setShelvesByCategory)
-  const setSpotifyDeviceId = useGameStore((s) => s.setSpotifyDeviceId)
   const setLibraryLoadState = useGameStore((s) => s.setLibraryLoadState)
   const setLibraryProgress = useGameStore((s) => s.setLibraryProgress)
   const setLibraryError = useGameStore((s) => s.setLibraryError)
@@ -221,29 +220,7 @@ function useLibraryLoader() {
         setLibraryLoadState('done')
       }
     })()
-
-    // Init Spotify Web Playback SDK in parallel with the library fetch — but
-    // ONLY for signed-in users. Guests don't have a token (and aren't
-    // necessarily Premium), and preview-mode playback runs through Web Audio
-    // directly without ever touching the SDK.
-    if (spotifyToken && !guestMode) {
-      initPlayer(
-        spotifyToken,
-        (state: SpotifyPlaybackState | null) => {
-          useGameStore.getState().setPlaybackState(state)
-          if (state) {
-            useGameStore.getState().setIsPlaying(!state.paused)
-          }
-        },
-        (deviceId: string) => {
-          setSpotifyDeviceId(deviceId)
-        },
-        (err: string) => {
-          console.error('Spotify player error:', err)
-        },
-      )
-    }
-  }, [spotifyToken, guestMode, setLibraryLoadState, setLibraryProgress, setLibraryError, setAlbums, setShelvesByCategory, setSpotifyDeviceId])
+  }, [spotifyToken, guestMode, setLibraryLoadState, setLibraryProgress, setLibraryError, setAlbums, setShelvesByCategory])
 }
 
 // ─── Main Cafe component ───────────────────────────────────────────────────────
@@ -274,13 +251,12 @@ export default function Cafe() {
 
   // Pause every audio source when the tab/window becomes hidden, and resume
   // music if it was playing when the user comes back. Without this, a
-  // backgrounded tab keeps Spotify SDK / preview <audio> playing into the
-  // void, and the cafe ambience continues even though the user is gone.
+  // backgrounded tab keeps the preview <audio> playing into the void and
+  // the cafe ambience continues even though the user is gone.
   //
-  // Three sources to handle:
+  // Two sources to handle:
   //   1. Howler-managed sounds (rain, chatter, SFX) → global mute toggle
   //   2. Preview player <audio> + Web Audio chain → preview.pause/resume
-  //   3. Spotify Web Playback SDK → player.pause()/resume()
   //
   // We only AUTO-RESUME music — ambient unmutes itself as soon as Howler is
   // un-muted, but if the user paused the music themselves before tabbing
@@ -298,11 +274,7 @@ export default function Cafe() {
       const s = useGameStore.getState()
       wasMusicPlaying = s.isPlaying
       setHowlerMuted(true)
-      // Always pause both audio paths regardless of mode — cheaper than
-      // checking which one is active and harmless if one path isn't in use.
       try { preview.pause() } catch { /* no-op */ }
-      const p = getPlayer()
-      if (p) p.pause().catch(() => null)
     }
 
     const resumeAll = () => {
@@ -312,13 +284,7 @@ export default function Cafe() {
       // Only auto-resume music if it was playing when we backgrounded — if
       // the user had stopped it themselves, leave it stopped.
       if (!wasMusicPlaying) return
-      const s = useGameStore.getState()
-      if (s.playbackMode === 'preview') {
-        try { preview.resume() } catch { /* no-op */ }
-      } else {
-        const p = getPlayer()
-        if (p) p.resume().catch(() => null)
-      }
+      try { preview.resume() } catch { /* no-op */ }
     }
 
     const onVisibilityChange = () => {

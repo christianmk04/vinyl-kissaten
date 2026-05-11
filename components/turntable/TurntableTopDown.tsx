@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useGameStore } from '@/lib/game/store'
-import { playTracks, pausePlayback, getPlayer } from '@/lib/spotify/player'
 import { fetchAlbumTracks } from '@/lib/spotify/library'
 import { splitSides } from '@/lib/spotify/sides'
 import { playSound, duckChatForMusic, unduckChat } from '@/lib/audio/howlerSetup'
@@ -97,15 +96,19 @@ export default function TurntableTopDown() {
   return null
 }
 
-// ─── Hook: tonearm state → Spotify playback ───────────────────────────────────
+// ─── Hook: tonearm state → preview-mode playback ──────────────────────────────
+//
+// All playback runs through the Web-Audio preview path. This used to also
+// branch into a Spotify Web Playback SDK path for full-track LISTEN mode,
+// but the SDK was desktop-only (didn't work on mobile browsers) and added
+// significant complexity for a feature only a fraction of users could even
+// use, so it was removed in favor of a single, consistent audio engine.
 
 export function useTonearmPlayback() {
   const tonearmState = useGameStore((s) => s.tonearmState)
   const loadedAlbum = useGameStore((s) => s.loadedAlbum)
   const loadedSide = useGameStore((s) => s.loadedSide)
   const spotifyToken = useGameStore((s) => s.spotifyToken)
-  const spotifyDeviceId = useGameStore((s) => s.spotifyDeviceId)
-  const playbackMode = useGameStore((s) => s.playbackMode)
   const setSideTracks = useGameStore((s) => s.setSideTracks)
   const setIsPlaying = useGameStore((s) => s.setIsPlaying)
   const setEndOfSideReached = useGameStore((s) => s.setEndOfSideReached)
@@ -117,7 +120,7 @@ export function useTonearmPlayback() {
 
   // Wire preview player callbacks once. onTrackChange synthesizes a
   // SpotifyPlaybackState-shaped object so the rest of the UI (NowPlaying,
-  // end-of-side detection, track highlight) can be playback-mode agnostic.
+  // end-of-side detection, track highlight) reads from a single source.
   useEffect(() => {
     preview.setCallbacks({
       onTrackChange: (track, idx, total) => {
@@ -178,20 +181,6 @@ export function useTonearmPlayback() {
     setIsPlaying(false)
   }, [loadedAlbum?.id, setSideTracks, setPlaybackState, setIsPlaying])
 
-  // Switching modes mid-listen: stop both paths so the user gets a clean restart.
-  // Skip the initial mount so we don't gratuitously pause / set state on first render.
-  const prevModeRef = useRef(playbackMode)
-  useEffect(() => {
-    if (prevModeRef.current === playbackMode) return
-    prevModeRef.current = playbackMode
-    preview.stop()
-    if (spotifyToken) pausePlayback(spotifyToken).catch(() => null)
-    setTonearmState('rest')
-    setIsPlaying(false)
-    setPlaybackState(null)
-    loadedKeyRef.current = ''
-  }, [playbackMode, spotifyToken, setTonearmState, setIsPlaying, setPlaybackState])
-
   useEffect(() => {
     const prev = prevTonearmRef.current
     prevTonearmRef.current = tonearmState
@@ -199,13 +188,9 @@ export function useTonearmPlayback() {
     // Stop transition runs FIRST so picking up the record (which clears
     // loadedAlbum and sets tonearm to 'rest' simultaneously) actually halts
     // playback. Without this, the early `if (!loadedAlbum) return` would
-    // short-circuit before the pause code below ran.
+    // short-circuit before the stop code below ran.
     if (prev === 'playing' && tonearmState !== 'playing') {
-      if (playbackMode === 'preview') {
-        preview.stop()
-      } else if (spotifyToken) {
-        pausePlayback(spotifyToken).catch(() => null)
-      }
+      preview.stop()
       unduckChat()
       setIsPlaying(false)
       loadedKeyRef.current = ''
@@ -214,69 +199,27 @@ export function useTonearmPlayback() {
 
     if (!loadedAlbum) return
 
-    // ── Preview mode — Web Audio path with full FX ─────────────────────────
-    // Reachable for both guest mode (no token, snapshot tracks) and signed-in
-    // users who toggled into preview mode. resolveTracks handles both cases.
-    if (playbackMode === 'preview') {
-      if (tonearmState === 'playing' && prev !== 'playing') {
-        useGameStore.getState().setPreviewError(null)
-        const key = `${loadedAlbum.id}::${loadedSide}::preview`
-        if (loadedKeyRef.current === key && preview.isReady()) {
-          preview.resume()
-          duckChatForMusic()
-          setIsPlaying(true)
-        } else {
-          loadedKeyRef.current = key
-          resolveTracks(loadedAlbum, spotifyToken).then(async (tracks) => {
-            const { sideA, sideB } = splitSides(tracks)
-            setSideTracks(sideA, sideB)
-            const sideTracks = loadedSide === 'A' ? sideA : sideB
-            if (sideTracks.length === 0) return
-            const ok = await preview.playSide(sideTracks)
-            if (ok) {
-              duckChatForMusic()
-              setIsPlaying(true)
-            }
-          })
-        }
-      }
-      return
-    }
-
-    // ── Spotify mode — full tracks via SDK (no FX) ─────────────────────────
-    if (!spotifyToken || !spotifyDeviceId) return
-
     if (tonearmState === 'playing' && prev !== 'playing') {
-      const key = `${loadedAlbum.id}::${loadedSide}::spotify`
-
-      if (loadedKeyRef.current === key) {
-        const p = getPlayer()
-        if (p) {
-          p.resume().then(() => {
-            duckChatForMusic()
-            setIsPlaying(true)
-          }).catch(() => {
-            fetch('https://api.spotify.com/v1/me/player/play', {
-              method: 'PUT',
-              headers: { Authorization: `Bearer ${spotifyToken}` },
-            })
-            duckChatForMusic()
-            setIsPlaying(true)
-          })
-        }
+      useGameStore.getState().setPreviewError(null)
+      const key = `${loadedAlbum.id}::${loadedSide}`
+      if (loadedKeyRef.current === key && preview.isReady()) {
+        preview.resume()
+        duckChatForMusic()
+        setIsPlaying(true)
       } else {
         loadedKeyRef.current = key
-        resolveTracks(loadedAlbum, spotifyToken).then((tracks) => {
+        resolveTracks(loadedAlbum, spotifyToken).then(async (tracks) => {
           const { sideA, sideB } = splitSides(tracks)
           setSideTracks(sideA, sideB)
           const sideTracks = loadedSide === 'A' ? sideA : sideB
           if (sideTracks.length === 0) return
-          const uris = sideTracks.map((t) => t.uri)
-          playTracks(spotifyToken, spotifyDeviceId, uris)
-          duckChatForMusic()
-          setIsPlaying(true)
+          const ok = await preview.playSide(sideTracks)
+          if (ok) {
+            duckChatForMusic()
+            setIsPlaying(true)
+          }
         })
       }
     }
-  }, [tonearmState, loadedAlbum, loadedSide, playbackMode, spotifyToken, spotifyDeviceId, setSideTracks, setIsPlaying])
+  }, [tonearmState, loadedAlbum, loadedSide, spotifyToken, setSideTracks, setIsPlaying])
 }

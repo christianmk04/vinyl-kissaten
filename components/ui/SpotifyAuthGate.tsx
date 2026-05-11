@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { buildAuthUrl, exchangeCode, saveTokens, loadTokens, isTokenExpired, refreshToken } from '@/lib/spotify/auth'
-import { fetchUserProfile } from '@/lib/spotify/library'
 import { useGameStore } from '@/lib/game/store'
 
 export default function SpotifyAuthGate() {
@@ -16,9 +15,7 @@ export default function SpotifyAuthGate() {
   const spotifyToken = useGameStore((s) => s.spotifyToken)
   const guestMode = useGameStore((s) => s.guestMode)
   const setSpotifyToken = useGameStore((s) => s.setSpotifyToken)
-  const setIsPremium = useGameStore((s) => s.setIsPremium)
   const setGuestMode = useGameStore((s) => s.setGuestMode)
-  const setPlaybackMode = useGameStore((s) => s.setPlaybackMode)
 
   useEffect(() => {
     // Handle OAuth callback code in URL
@@ -39,10 +36,6 @@ export default function SpotifyAuthGate() {
         .then((data) => {
           saveTokens(data)
           setSpotifyToken(data.access_token)
-          return fetchUserProfile(data.access_token)
-        })
-        .then((profile) => {
-          setIsPremium(profile.product === 'premium')
         })
         .catch((e) => setError(String(e)))
         .finally(() => setLoading(false))
@@ -53,9 +46,6 @@ export default function SpotifyAuthGate() {
     const { accessToken, refreshToken: rt, expiresAt } = loadTokens()
     if (accessToken && !isTokenExpired(expiresAt)) {
       setSpotifyToken(accessToken)
-      fetchUserProfile(accessToken)
-        .then((p) => setIsPremium(p.product === 'premium'))
-        .catch(() => {})
     } else if (rt) {
       // Refresh
       setLoading(true)
@@ -63,9 +53,7 @@ export default function SpotifyAuthGate() {
         .then((data) => {
           saveTokens(data)
           setSpotifyToken(data.access_token)
-          return fetchUserProfile(data.access_token)
         })
-        .then((p) => setIsPremium(p.product === 'premium'))
         .catch(() => setError('Session expired. Please sign in again.'))
         .finally(() => setLoading(false))
     }
@@ -142,9 +130,8 @@ export default function SpotifyAuthGate() {
           <br />
           <br />
           <span style={{ color: '#6a5848', fontSize: '10px' }}>
-            Spotify Premium required for full-track playback.
-            <br />
-            (30-second previews work on free accounts.)
+            Playback uses 30-second previews — works on any Spotify account,
+            free or Premium.
           </span>
         </div>
 
@@ -237,9 +224,7 @@ export default function SpotifyAuthGate() {
               onClick={() => {
                 // Guest path: skip Spotify entirely. The library loader will
                 // pull from /library.json and previewPlayer will use the
-                // baked Deezer preview URLs. Force preview mode so
-                // useTonearmPlayback doesn't try to talk to the SDK.
-                setPlaybackMode('preview')
+                // baked Deezer preview URLs.
                 setGuestMode(true)
               }}
               style={{

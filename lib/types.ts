@@ -11,8 +11,6 @@ export interface SpotifyTrack {
   preview_url: string | null
 }
 
-export type PlaybackMode = 'spotify' | 'preview'
-
 export interface SpotifyAlbum {
   id: string
   uri: string
@@ -32,35 +30,10 @@ export type RecordSide = 'A' | 'B'
 export type TonearmState = 'rest' | 'cued' | 'playing'
 export type PlatterRpm = 33 | 45 | 78
 
-// Spotify Web Playback SDK types (partial)
-declare global {
-  interface Window {
-    Spotify: {
-      Player: new (options: SpotifyPlayerInit) => SpotifyPlayer
-    }
-    onSpotifyWebPlaybackSDKReady: () => void
-  }
-}
-
-export interface SpotifyPlayerInit {
-  name: string
-  getOAuthToken: (cb: (token: string) => void) => void
-  volume?: number
-}
-
-export interface SpotifyPlayer {
-  connect(): Promise<boolean>
-  disconnect(): void
-  addListener(event: string, cb: (data: unknown) => void): void
-  removeListener(event: string, cb?: (data: unknown) => void): void
-  getCurrentState(): Promise<SpotifyPlaybackState | null>
-  setVolume(volume: number): Promise<void>
-  pause(): Promise<void>
-  resume(): Promise<void>
-  previousTrack(): Promise<void>
-  nextTrack(): Promise<void>
-}
-
+// Now-playing snapshot. This shape originally came from the Spotify Web
+// Playback SDK; after dropping the SDK we kept the same fields and now
+// synthesize this object in previewPlayer's onTrackChange callback so the
+// UI (NowPlaying panel, end-of-side detection) stays mode-agnostic.
 export interface SpotifyPlaybackState {
   context: { uri: string }
   track_window: {
